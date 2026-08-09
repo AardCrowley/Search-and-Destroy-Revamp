@@ -1,0 +1,4325 @@
+<?xml version="1.0" encoding="iso-8859-1"?><!DOCTYPE muclient>
+<!-- Saved on Saturday, July 05, 2008, 4:46 PM -->
+<muclient>
+    <plugin version="6.0" name="Search_and_Destroy" id="30000000537461726C696E67" date_written="2018-12-31 23:00:00" author="Crowley" language="Lua" purpose="Safe, legal Search and Destroy" save_state="y" requires="4.90">
+        <description trim="n"></description>
+    </plugin>
+
+    <!-- Module includes are loaded via the bootstrap dofile() mechanism; no static includes needed. -->
+    <variables>
+    </variables>
+
+    <timers>
+        <timer name="tim_init_plugin" second="0.5" active_closed="y" script="init_plugin" enabled="y" send_to="12"></timer>
+
+        <timer name="execute_in_area_timer" second="0.1" script="" enabled="n" send_to="12">
+            <send>	execute_in_area_tick() </send>
+        </timer>
+
+		<timer name="execute_in_room_timer"	second="0.1" script="" enabled="n" send_to="12">
+			<send>	execute_in_room_tick() </send>
+		</timer>
+
+        <timer name="vidblain_nav_timer" second="0.1" script="" enabled="n" send_to="12">
+            <send>	vidblain_nav_tick() </send>
+        </timer>
+
+        <timer name="update_check_tick" script="check_for_updates" second="10" enabled="y" send_to="12"></timer>
+
+        <timer name="quest_timer" script="quest_timer_tick" second="1" enabled="y" send_to="12"></timer>
+
+        <!-- Status tick timer removed: per-second Repaint() competed with scroll
+             repaints and caused jumpy scrolling.  Elapsed display was removed;
+             "Last" updates at natural redraw cadence instead. -->
+        <!-- <timer name="tim_status_tick" script="snd_status_tick" second="1" enabled="y" send_to="12"></timer> -->
+
+        <timer name="state_change_timer" script="check_state_changed" second="1" enabled="y" send_to="12"></timer>
+    </timers>
+
+    <script>
+    <![CDATA[
+dofile(GetInfo(60) .. "aardwolf_colors.lua")
+
+require "movewindow"
+require "serialize"
+require "tprint"
+require "wait"
+require "wrapped_captures"
+
+-- ─── PLUGIN-ID LOCALS ─────────────────────────────────────────────────────────
+-- Available before modules load so lifecycle handlers can use them immediately.
+local _GMCP_HANDLER_ID = "3e7dedbe37e44942dd46d264"
+local _Z_ORDER_ID      = "462b665ecb569efbf261422f"
+local _SOUNDPACK_ID    = "23832d1089f727f5f34abad8"
+local _MAPPER_ID       = "b6eae87ccedd84f510b74714"
+
+require "gmcphelper"
+
+-- ─── SHARED-STATE GLOBALS ─────────────────────────────────────────────────────
+-- Written by OnPluginBroadcast; read by module functions.
+-- Modules may reinitialize these, but they exist here in case a broadcast fires
+-- before the bootstrap completes.
+current_character_state = "0"
+current_room  = {rmid = "-1", arid = "-1", maze = "no", exits = {}}
+previous_room = {rmid = "-2", arid = "-2", maze = "no", exits = {}}
+room_history  = {}
+sound_not_played = true
+noexp_onoff   = "off"
+going_to_room = nil
+
+-- ─── STATE OWNED BY XML GAME LOGIC ────────────────────────────────────────────
+-- Used by inline functions not yet extracted to modules.
+-- Defaults here are intentionally hardcoded.  init_xml_settings() (called from
+-- init_plugin_after_load() after DB migration) overwrites these with values from
+-- the settings table, so they only apply for the brief window before DB init.
+win = "sd_window_" .. GetPluginID()
+
+mshow = {}
+
+UPDATE_CHECK_INTERVAL   = 60 * 60
+last_update_check       = -1
+automatic_update_checks = "on"
+
+state_changed = false
+init_called   = 0
+
+gqid_joined    = "-1"
+gqid_started   = "-1"
+gqid_extended  = "-1"
+potential_gq   = {}
+player_on_gq   = "no"
+gq_info_list   = {}
+last_gq_check  = os.clock()
+gq_info_efflvl = 0
+gq_info_minlvl = 0
+gq_info_maxlvl = 0
+-- GQ history tracking: stores the GQ ID for which history_start was called.
+-- Prevents duplicate rows when the player re-runs 'gq info'.
+gq_history_id  = nil
+
+mock_gquests     = {}
+mock_gqid_joined = nil
+debug_gq_mode    = false
+
+can_get_new_cp  = "no"
+player_on_cp    = "no"
+last_kill_index = nil
+
+xcp_retry_stat          = nil
+xcp_index_attempt       = nil
+xcp_action_mode         = "qw"
+xcp_targets_quest_onoff = "off"
+
+next_quest_time = nil
+next_quest_text = nil
+
+anex_tnl_cutoff      = 0
+anex_automatic_onoff = "on"
+
+xset_vidblain_level         = 300
+xset_vidblain_onoff         = "off"
+xset_gq_check_extra_aliases = "on"
+
+speed = "run"
+
+dir_map = {north="n", south="s", east="e", west="w", up="u", down="d"}
+
+auto_hunt_dir = ""
+auto_hunt_mob = ""
+autoHuntData  = {}
+
+last_mob_damaged = nil
+last_mob_killed  = nil
+
+debug_mode  = "off"
+table_notes = "off"
+table_width = 80
+
+-- ─── REMOTE SOURCE ────────────────────────────────────────────────────────────
+--
+-- Everything the plugin downloads -- itself, its modules, the manifest, the
+-- seed data, the sounds -- comes from one repository.  These two lines are the
+-- only place that repository is named; every URL below is derived from them,
+-- so moving hosts is a two-line change rather than a hunt through three files.
+--
+-- SND_RAW_URL takes the branch first and the repo-relative path second.  The
+-- path shape differs by host, which is why the whole pattern is configurable
+-- and not just the domain:
+--
+--   GitHub   https://raw.githubusercontent.com/USER/REPO/%s/%s
+--   Gitea    https://HOST/USER/REPO/~files/%s/%s
+--
+SND_RAW_URL = "https://raw.githubusercontent.com/AardCrowley/Search-and-Destroy-Revamp/%s/%s"
+
+-- The branch modules, the manifest, the changelog and the seed data are served
+-- from. The plugin file itself is pulled from a "v<version>" TAG instead, by
+-- download_plugin, so a user updating gets an immutable release rather than
+-- whatever master happens to hold at that moment.
+SND_BRANCH  = "main"
+
+-- Repo-relative path -> full raw URL.  `branch` overrides SND_BRANCH, which is
+-- what the updater uses to pull a specific release.
+function snd_raw_url(path, branch)
+    return string.format(SND_RAW_URL, branch or SND_BRANCH, path)
+end
+
+versionURL    = snd_raw_url("VERSION")
+CHANGELOG_URL = snd_raw_url("changelog.md")
+
+-- Beta version tags used by the update-check callback.
+betaVersion = nil
+prevBeta    = nil
+
+-- ─── SMALL HELPERS ────────────────────────────────────────────────────────────
+
+-- Public getter: window.lua reads next_quest_time via this.
+function snd_next_quest_time()
+    return next_quest_time
+end
+
+-- Map query helper used by non-module code.
+function mapFind(query)
+    return CallPlugin(_MAPPER_ID, "map_find_query", query)
+end
+
+-- Called from init_plugin_after_load() after DB migration and character init.
+-- Reloads XML-owned globals from the settings table, overriding the hardcoded
+-- defaults set in the preamble above.  snd_get_setting() is safe here because
+-- migration has already run and char_id is set.
+function init_xml_settings()
+    automatic_update_checks     = snd_get_setting("automatic_update_checks",  "on")
+    gqid_joined                 = snd_get_setting("gqid_joined",              "-1")
+    gqid_started                = snd_get_setting("gqid_started",             "-1")
+    gqid_extended               = snd_get_setting("gqid_extended",            "-1")
+    gq_info_efflvl              = tonumber(snd_get_setting("gq_info_efflvl",  "0")) or 0
+    -- The level the current campaign was taken at. do_cp_info persists this to
+    -- "cp_level_taken", but nothing read it back, so reloading mid-campaign
+    -- reset it to 0 and build_room_targets then filtered targets against 0.
+    cp_info_level               = tonumber(snd_get_setting("cp_level_taken",  "0")) or 0
+    xcp_action_mode             = snd_get_setting("xcp_action_mode",          "qw")
+    xcp_targets_quest_onoff     = snd_get_setting("xcp_targets_quest_onoff",  "off")
+    anex_tnl_cutoff             = tonumber(snd_get_setting("anex_tnl_cutoff", "0")) or 0
+    anex_automatic_onoff        = snd_get_setting("anex_automatic_onoff",     "on")
+    xset_vidblain_level         = tonumber(snd_get_setting("vidblain_level",  "300")) or 300
+    xset_vidblain_onoff         = snd_get_setting("vidblain_onoff",           "off")
+    xset_gq_check_extra_aliases = snd_get_setting("gq_check_extra_aliases",   "on")
+    debug_mode                  = snd_get_setting("debug_mode",               "off")
+    table_notes                 = snd_get_setting("table_notes",              "off")
+    table_width                 = tonumber(snd_get_setting("table_width",     "80")) or 80
+    -- The version whose changelog the user has already seen. It was persisted
+    -- by the changelog code but never read back, so it was nil on every load
+    -- and the "what changed since your version" path could never run.
+    last_installed_version      = snd_get_setting("last_installed_version",   "")
+    apply_xset_gqalias()
+end
+
+-- ─── LIFECYCLE HANDLERS ───────────────────────────────────────────────────────
+
+function OnPluginBroadcast(msg, id, name, text)
+    if id == _GMCP_HANDLER_ID then
+        if text == "char.status" then
+            current_character_state = gmcp("char.status.state")
+            local lvl = tonumber(gmcp("char.status.level"))
+            if lvl and lvl < 200 and anex_automatic_onoff == "on" then
+                if type(anex_check_tnl_silent) == "function" then
+                    anex_check_tnl_silent()
+                end
+            end
+        elseif text == "char.base" then
+            if type(resolve_pending_character) == "function" then
+                resolve_pending_character(gmcp("char.base.name"))
+            end
+        elseif text == "room.info" then
+            sound_not_played = true
+            local ri = gmcp("room.info")
+            if ri then
+                ri.maze = (ri.details and ri.details:find("maze") ~= nil) and 1 or 0
+                previous_room = current_room or {rmid = "-2", arid = "-2"}
+                current_room = {rmid = ri.num, arid = ri.zone, exits = ri.exits, maze = ri.maze, name = ri.name}
+                if current_room.rmid ~= previous_room.rmid then
+                    if going_to_room == current_room.rmid then
+                        if type(action_on_destination_arrived) == "function" then
+                            action_on_destination_arrived()
+                        end
+                        going_to_room = nil
+                    end
+                    if #room_history == 300 then
+                        table.remove(room_history)
+                    end
+                    table.insert(room_history, 1, room_history[0])
+                    room_history[0] = {rmid = current_room.rmid, arid = current_room.arid}
+                end
+                if current_room.arid ~= previous_room.arid then
+                    if type(check_zone_known) == "function" then
+                        check_zone_known(current_room.arid)
+                    end
+                end
+            end
+        elseif text == "comm.quest" then
+            if type(quest_status_gmcp) == "function" then
+                quest_status_gmcp(gmcp("comm.quest"))
+            end
+        elseif text == "config" then
+            noexp_onoff = (gmcp("config.noexp") == "YES") and "on" or "off"
+        end
+    elseif id == _Z_ORDER_ID and msg == 996 and text == "re-register z" then
+        if type(xg_create_window) == "function" then
+            xg_create_window()
+        end
+    end
+end
+
+function OnPluginInstall()
+    local json_ok
+    json_ok, json = pcall(require, "json")
+    if not json_ok then
+        ColourNote("white", "red", "SnD: 'json' library not available: " .. tostring(json))
+    end
+    _snd_bootstrap(function()
+        if type(init_plugin_after_load) == "function" then
+            init_plugin_after_load()
+        end
+    end)
+end
+
+function OnPluginEnable()
+    if type(InfoNote) == "function" then
+        InfoNote("Enabled ", "Search and Destroy")
+    end
+    if type(xg_create_window) == "function" then
+        xg_create_window()
+    end
+end
+
+function OnPluginDisable()
+    if type(InfoNote) == "function" then
+        InfoNote("Disabled ", "Search and Destroy")
+    end
+    if type(xg_destroy_window) == "function" then
+        xg_destroy_window()
+    end
+end
+-- Alias handler: 'snd changelog [all|since <version>]'
+--
+-- Replaces the previous JSON-based implementation, which never worked: it was
+-- only ever called with all_changes=true so the version-diff branch was dead,
+-- last_installed_version was written but never read back so it was nil on
+-- every load anyway, and the URL pointed at a JSON file that does not exist.
+-- Parsing and rendering now live in changelog.lua; this is just the entry point.
+function get_changelog(mode, req_version)
+    if type(mode) == "boolean" then mode = mode and "all" or "new" end
+    if type(cl_show) ~= "function" then
+        ErrorNote("SnD: changelog.lua is not loaded.")
+        return
+    end
+    cl_show(mode or "new", req_version)
+end
+
+-- Alias handler: 'snd changelog since <version>'
+function changelog_since(name, line, wildcards)
+    local w = (type(wildcards) == "table" and wildcards) or {}
+    get_changelog("since", Trim(w["version"] or w[1] or ""))
+end
+
+function init_plugin()
+    if not IsConnected() then
+        return
+    end
+    local ch_state = current_character_state
+    if ((ch_state ~= "3") and (ch_state ~= "8") and (ch_state ~= "9") and (ch_state ~= "11")) then
+        send_gmcp_packet("request char")
+        return
+    end
+    SendNoEcho("tags scan on")
+    SendNoEcho("tags roomchars on")
+
+    send_gmcp_packet("request room")
+    init_called = init_called + 1
+    if (init_called == 2) then
+        setup_scan_con_triggers()
+        EnableTimer("tim_init_plugin", false)
+        send_gmcp_packet("config noexp")
+        send_gmcp_packet("request quest")
+        toggle_con_overwrite_triggers()
+        check_for_updates()
+        apply_xset_gqalias()
+    end
+end
+
+function xq_command() -- enables 'xq' command (reload quest info)
+    send_gmcp_packet("request quest")
+end
+
+function retarget_quest()
+    if has_active_quest() then
+        target_quest_mob(true)
+        xg_draw_window()
+    elseif quest_target.qstat == "3" then
+        InfoNote("\nSearch and Destroy: You have already killed your quest target!\n")
+    else
+        InfoNote("\nSearch and Destroy: You are not on a quest.\n")
+    end
+end
+
+function player_start_new_cp() -- called by line "good luck on your campaign" when starting new cp
+    history_start(HISTORY_TYPE_CP)
+
+    player_on_cp = "yes"
+    can_get_new_cp = "no"
+    local x = tonumber(gmcp("char.status.level"))
+    cp_info_level = x
+    current_activity = "cp"
+    xg_draw_window()
+    if (noexp_onoff == "on") and (anex_tnl_cutoff > 0) then
+        InfoNote("Search and Destroy: Turning 'noexp' OFF (you have started a new CP)")
+        anex_set_noexp("off")
+    end
+    do_cp_info()
+end
+
+function get_last_kill_index()
+    for i, target in ipairs(main_target_list) do
+        DebugNote("comparing ", last_mob_killed, " (", current_room.arid, ") to ", target.mob, " (", target.arid, ")")
+        if current_room.arid == target.arid and last_mob_killed == target.mob then
+            DebugNote("killed mob is number ", i)
+            return i
+        end
+    end
+    DebugNote("Couldn't find last mob kill on target list")
+    return nil
+end
+
+function player_level_up()
+    can_get_new_cp = "yes"
+    xg_draw_window()
+end
+
+function player_is_on_cp()
+    player_on_cp = "yes"
+end
+
+function do_cp_complete(name, line, wildcards)
+    DebugNote("Campaign complete")
+    -- Delay by 0.5s to allow the daily-bonus trigger to fire first.
+    DoAfterSpecial(0.5, [[ history_end(HISTORY_TYPE_CP, HISTORY_STATUS_COMPLETE) ]], 12)
+    player_not_on_cp()
+end
+
+function do_cp_quit()
+    DebugNote("Campaign quit")
+    history_end(HISTORY_TYPE_CP, HISTORY_STATUS_FAILED)
+    player_not_on_cp()
+end
+
+function cp_check_can_get_new_cp()
+    can_get_new_cp = "yes"
+    anex_can_get_new_cp()
+    xg_draw_window()
+end
+
+function cp_check_cannot_get_new_cp()
+    can_get_new_cp = "no"
+    anex_must_level_new_cp()
+    xg_draw_window()
+end
+
+function can_player_get_new_cp()
+    return (can_get_new_cp == "yes") and true or false
+end
+
+-- ─── GQ HISTORY END HELPERS ──────────────────────────────────────────────────
+-- Called from GQ-ending events.  Each variant records the correct status then
+-- resets the GQ tracking state via player_not_on_gq().
+
+function gq_end_won()
+    -- gq_reward_mode_on() was already called; rewards have been captured.
+    history_end(HISTORY_TYPE_GQ, HISTORY_STATUS_COMPLETE)
+    gq_history_id = nil
+    player_not_on_gq()
+end
+
+function gq_end_failed()
+    history_end(HISTORY_TYPE_GQ, HISTORY_STATUS_FAILED)
+    gq_history_id = nil
+    player_not_on_gq()
+end
+
+function gq_end_timeout()
+    history_end(HISTORY_TYPE_GQ, HISTORY_STATUS_TIMEOUT)
+    gq_history_id = nil
+    player_not_on_gq()
+end
+
+function gq_quit_handler(name, line, wildcards)
+    history_end(HISTORY_TYPE_GQ, HISTORY_STATUS_FAILED)
+    gq_history_id = nil
+    player_not_on_gq()
+end
+
+--	[[ Gquest beginning event messages: declare, join, start ]]
+function gqmsg_joined(name, line, wildcards)
+    gqid_joined = wildcards.gq_id
+
+    snd_set_setting("gqid_joined", gqid_joined, false)
+    DebugNote("Joined gq ", gqid_joined, " gqid_started ", gqid_started)
+    if (gqid_joined == gqid_started) then
+        EnableTriggerGroup("trg_gqmsg", true)
+        do_gq_info()
+    end
+end
+
+function gqmsg_info_num(name, line, wildcards)
+    gqid_joined = wildcards.gq_id
+    snd_set_setting("gqid_joined", gqid_joined, false)
+end
+
+function gqmsg_declared(name, line, wildcards)
+    -- "Global Quest: Global quest # N has been declared for levels X to Y."
+    -- Informational only; player decides whether to join.
+    DebugNote("GQ declared: #", wildcards.gq_id,
+              " levels ", wildcards.min_lvl, "-", wildcards.max_lvl)
+end
+
+function gqmsg_completed_other(name, line, wildcards)
+    -- "Global Quest: PlayerName has completed Global Quest # N."
+    -- Another player finished in extended time; our quest continues.
+    DebugNote("GQ completed by ", wildcards.winner, " (gq #", wildcards.gq_id, ")")
+end
+
+function gqmsg_started(name, line, wildcards)
+    -- "The global quest for levels X to Y has now started." has no gq_id.
+    -- If we've joined a GQ, this start message is for it.
+    if gqid_joined ~= "-1" then
+        gqid_started = gqid_joined
+        snd_set_setting("gqid_started", gqid_started, false)
+        EnableTriggerGroup("trg_gqmsg", true)
+        do_gq_info()
+    end
+end
+
+--	[[ Gquest check functions ]]
+-- do_gq_info / send_gq_info / on_gq_info_captured / on_gq_info_parsed are now
+-- in lua/targets.lua and use Capture.untagged_output.
+function send_gq_check()
+    -- Thin wrapper kept for backward-compat; do_gq_check handles debug mode.
+    do_gq_check()
+end
+
+function gqmsg_winner(name, line, wildcards)
+    -- "The global quest has been won by Name - Nth win." has no gq_id.
+    local winner = wildcards.winner
+    local you = gmcp("char.base.name")
+    if (winner == you) then
+        ColourNote("#FFFFFF", "", "\nA WINNER IS YOU\n")
+        -- Enable GQ reward mode so the reward triggers fill _gq_* accumulators.
+        -- Delay the history_end call by 0.75s to let the reward lines arrive first.
+        if type(gq_reward_mode_on) == "function" then gq_reward_mode_on() end
+        DoAfterSpecial(0.75, "gq_end_won()", sendto.script)
+    elseif gqid_joined ~= "-1" then
+        -- Someone else won; we're still in our GQ which may go to extended time.
+        EnableTrigger("trg_gqmsg_extended_time", true)
+        DoAfterSpecial(0.5, "gq_check_if_extended()", sendto.script)
+    end
+end
+
+function gqmsg_extended_time(name, line, wildcards)
+    -- "The global quest will go into extended time for N more minutes." has no gq_id.
+    if gqid_joined ~= "-1" then
+        gqid_extended = gqid_joined
+    end
+end
+
+function gq_check_if_extended()
+    EnableTrigger("trg_gqmsg_extended_time", false)
+    if (gqid_extended ~= gqid_joined) then
+        gq_end_failed()
+    end
+end
+
+function gq_check_not_yet_started(name, line, wildcards)
+    gqid_joined = wildcards[1]
+    player_is_on_gq()
+    gqid_started = "-1"
+    snd_set_setting("gqid_started", "-1", false)
+end
+
+function gq_ended(name, line, wildcards)
+    if gqid_joined == wildcards.gq_id then
+        gq_end_timeout()
+    end
+end
+
+function xcp_set_action_mode(name, line, wildcards)
+    local opt = wildcards.option or ""
+    local options = {
+        ["ht"] = "ht - do hunt trick",
+        ["qw"] = "qw - do quick where",
+        ["off"] = "off - no additional action"
+    }
+    if (opt == "ht") or (opt == "qw") or (opt == "off") then
+        xcp_action_mode = opt
+        snd_set_setting("xcp_action_mode", opt, false)
+        InfoNote("Set 'xcp' mode to: ", options[opt], ".")
+    elseif (opt == "") then
+        InfoNote("Current 'xcp' mode: " .. options[xcp_action_mode] .. ".")
+        InfoNote("Syntax: 'xcp mode [ht|qw|off]'")
+    else
+        InfoNote("Invalid 'xcp' mode given.  Syntax: 'xcp mode [ht|qw|off]'")
+    end
+    print("")
+end
+
+function xcp_toggle_quest_targeting()
+    if xcp_targets_quest_onoff == "on" then
+        xcp_targets_quest_onoff = "off"
+    else
+        xcp_targets_quest_onoff = "on"
+    end
+    snd_set_setting("xcp_targets_quest_onoff", xcp_targets_quest_onoff, false)
+
+    InfoNote("\nxcp quest targeting is now ", string.upper(xcp_targets_quest_onoff))
+end
+
+-- xset_silentMode (old name) removed; active handler is xset_silent_mode in hunting.lua.
+
+function map_area(name, line, wildcards)
+    search_rooms_fuzzy(wildcards.loc, current_room.arid)
+end
+
+function map_area_all(name, line, wildcards)
+    search_rooms_fuzzy(wildcards.loc)
+end
+
+--	[[ "xwhere" command ]]
+function do_xwhere(name, line, wildcards)
+    local n1 = tonumber(wildcards.n1) or 12 -- if no number given, default to 12
+    local n2 = tonumber(wildcards.n2) or ""
+    local mob = wildcards.mob or ""
+    if (mob == "") then -- user entered no numbers, no mobname, or no args at all
+        InfoNote("\nSearch and Destroy: 'xwhere' required parameter missing.\n")
+        InfoNote("              Syntax: 'xwhere <mobname>'")
+        InfoNote("                      'xwhere <n1> <mobname>'") -- where 1.mobname to n1.mobname
+        InfoNote("                      'xwhere <n1> <n2> <mobname>'") -- where 1.mobname to n2.mobname
+        return
+    elseif (n2 == "") then -- user entered one number (n1) and a mobname, but no second number (n2)
+        InfoNote("\nSearch and Destroy: 'xwhere ", n1, " ", mob, "'")
+        for i = 1, n1, 1 do
+            if (i == 1) then
+                Send("where " .. mob)
+            else
+                Send("where " .. i .. "." .. mob)
+            end
+        end
+    elseif (mob ~= "") and (n2 ~= "") then -- user entered n1, n2, and mobname
+        InfoNote("Search and Destroy: 'xwhere ", n1, " ", n2, " ", mob, "'")
+        for i = n1, n2, 1 do
+            if (i == 1) then
+                Send("where " .. mob)
+            else
+                Send("where " .. i .. "." .. mob)
+            end
+        end
+    else
+        InfoNote("Search and Destroy: 'xwhere' data entry problem!")
+    end
+end
+
+--	[[ Autohunt ]]
+function auto_hunt(name, line, wildcards)
+    local s = string.lower(wildcards.arg)
+    if (s == "abort") or (s == "cancel") or (s == "0") then
+        auto_hunt_abort()
+    else
+        ht_reset()
+        EnableTriggerGroup("AutoHunt", true)
+        auto_hunt_mob = s
+        Send("hunt " .. s)
+    end
+end
+
+function auto_hunt_noarg()
+    if current_target then
+        if has_activity_target()
+        and mob_has_tag(current_target.mob, current_target.arid, "nohunt") then
+            InfoNote("SnD: Skipping hunt — mob is tagged nohunt.")
+            return
+        end
+        EnableTriggerGroup("AutoHunt", true)
+    	auto_hunt_mob = current_target.keyword
+    	Send("hunt " .. auto_hunt_mob)
+    else
+        EnableTriggerGroup("AutoHunt", true)
+	Send("ahem")
+    end
+end
+
+function auto_hunt_abort()
+    auto_hunt_reset()
+    InfoNote("Search and Destroy:  Auto-hunt cancelled.\n")
+end
+
+function auto_hunt_complete()
+    auto_hunt_reset()
+    InfoNote("Search and Destroy: Auto-hunt complete.\n")
+end
+
+function auto_hunt_lowskill()
+    InfoNote("\nSearch and Destroy:  Autohunt not available - hunt skill is too low.")
+    InfoNote("                     If hunt skill is available, practice it to 85% or higher.")
+    auto_hunt_reset()
+end
+
+function auto_hunt_move(direction)
+    local ri = current_room
+    local dir = dir_map[direction]
+    auto_hunt_direction = dir
+    if (ri) then -- don't know our gmcp exits, so just go with it
+        if (ri.exits[dir] == nil) then -- exit absent from GMCP (may be behind a closed door)
+            Send("open " .. dir)
+        end
+    end
+    Send(dir)
+end
+
+function auto_hunt_next(name, line, wildcards)
+    local dir = wildcards.dir
+    auto_hunt_move(dir)
+    Send("hunt " .. auto_hunt_mob)
+end
+
+function auto_hunt_door()
+    EnableTrigger("trg_autohunt_next_1", false)
+    EnableTrigger("trg_autohunt_next_2", false)
+    Send("open " .. auto_hunt_direction)
+end
+
+function auto_hunt_door_open()
+    EnableTrigger("trg_autohunt_next_1", true)
+    EnableTrigger("trg_autohunt_next_2", true)
+    Send(auto_hunt_direction)
+    Send("hunt " .. auto_hunt_mob)
+end
+
+function auto_hunt_portal()
+    InfoNote(
+        "\nSearch and Destroy: Auto-hunt through portals not working yet.  Enter portal manually and then autohunt again."
+    )
+    auto_hunt_reset()
+end
+
+function auto_hunt_reset()
+    EnableTriggerGroup("AutoHunt", false)
+    auto_hunt_mob = ""
+    auto_hunt_direction = ""
+    autoHuntData = {count = 0, north = 0, south = 0, east = 0, west = 0, up = 0, down = 0}
+end
+
+--	[[ Automatic noexp ]]
+function xset_noexp_tnl(name, line, wildcards) -- called by alias: "xset noexp" when argument given
+    local set_tnl = wildcards.arg or "-1"
+    if (anex_automatic_onoff == "on") then
+        if (wildcards.arg == "-1") or (wildcards.arg == "") or (wildcards.arg == nil) then
+            if (anex_tnl_cutoff == 0) then
+                InfoNote("Search and Destroy: Auto 'noexp' is currently OFF.")
+            else
+                InfoNote("Search and Destroy: Auto 'noexp' is ON and set to ", anex_tnl_cutoff, " TNL.\n")
+            end
+        elseif (wildcards.arg == "off") or (wildcards.arg == "0") then -- "xset noexp off" and "xset noexp 0" turn auto-noexp off.
+            EnableTrigger("trg_anex_mobdeath_xp1", false)
+            anex_tnl_cutoff = 0
+            snd_set_setting("anex_tnl_cutoff", "0", false)
+            InfoNote("\nSearch and Destroy: Auto 'noexp' is now OFF.\n")
+        else -- xset with any other (positive) number turns auto-noexp on.
+            EnableTrigger("trg_anex_mobdeath_xp1", true)
+            anex_tnl_cutoff = tonumber(set_tnl)
+            snd_set_setting("anex_tnl_cutoff", tostring(anex_tnl_cutoff), false)
+            InfoNote("\nSearch and Destroy: Auto 'noexp' now set to ", anex_tnl_cutoff, " TNL.\n")
+        end
+    else
+        InfoNote("\nSearch and Destroy: 'noexp' is *manually* OFF.\nType 'noexp' again to turn it back on.")
+    end
+    xg_draw_window()
+end
+
+function anex_set_noexp(x)
+    if (anex_automatic_onoff) == "on" then
+        if (x == "on") or (x == "off") then
+            noexp_onoff = x
+            send_gmcp_packet("config noexp " .. x)
+            DebugNote("noexp: " .. noexp_onoff)
+        end
+    else
+        noexp_onoff = "off"
+    end
+    xg_draw_window()
+end
+
+function anex_can_get_new_cp() -- called by line 'You may take campaign this level.' in 'cp check'
+    if (anex_automatic_onoff == "on") then
+        if (anex_tnl_cutoff > 0) then -- if anex_tnl_cutoff > 0 then auto-noexp is on.
+            local level = tonumber(gmcp("char.status.level"))
+            if not level then
+                return
+            elseif (level < 200) then
+                local tnl = tonumber(gmcp("char.status.tnl"))
+                if (tnl < anex_tnl_cutoff) and (noexp_onoff == "off") then -- tnl less than set point and noexp is off --> turn that shit on
+                    anex_set_noexp("on")
+                    InfoNote("\nSearch and Destroy: Turning 'noexp' ON (Your TNL is less than ", anex_tnl_cutoff, ")")
+                elseif (tnl > anex_tnl_cutoff) and (noexp_onoff == "on") then -- if over min TNL and noexp is on --> turn noexp off regardless
+                    anex_set_noexp("off")
+                    InfoNote(
+                        "\nSearch and Destroy: Turning 'noexp' OFF (your TNL is greater than ",
+                        anex_tnl_cutoff,
+                        ")"
+                    )
+                end
+            else
+                if (noexp_onoff == "on") then
+                    anex_set_noexp("off")
+                    InfoNote("\nSearch and Destroy: Turning noexp OFF (you have reached level ", level, ")")
+                end
+            end
+        else -- feature is turned off, just show reminder
+            anex_tnl_cutoff = 0 -- set to 0 if somehow negative
+            InfoNote("Automatic 'noexp' is currently turned OFF.\n")
+        end
+    end
+end
+
+function anex_must_level_new_cp() -- called by trigger:  You must level to get a new campaign
+    if anex_automatic_onoff == "on" then
+        if (anex_tnl_cutoff > 0) then
+            local level = tonumber(gmcp("char.status.level"))
+            if not level then
+                return
+            end
+            if (level < 200) then
+                if (noexp_onoff == "on") and (player_on_cp == "yes") then
+                    InfoNote("Search and Destroy: Turning noexp OFF (must level to get new cp)")
+                    anex_set_noexp("off")
+                end
+            else
+                if (noexp_onoff == "on") then
+                    anex_set_noexp("off")
+                    InfoNote("Search and Destroy: Turning noexp OFF (you have reached level ", level, ")")
+                end
+            end
+        end
+    end
+end
+
+function anex_mobdeath_xp1(name, line, wildcards) -- called when mob kill awards xp
+    if (anex_automatic_onoff == "on") then
+        local level = tonumber(gmcp("char.status.level"))
+        if (anex_tnl_cutoff > 0) then
+            if (level < 200) then
+                DoAfterSpecial(0.1, [[ anex_mobdeath_xp2() ]], 12)
+            else
+                if (noexp_onoff == "on") then
+                    anex_set_noexp("off")
+                    InfoNote("Search and Destroy: Turning noexp OFF (you have reached level ", level, ")")
+                    InfoNote("                    Use 'xset noexp off' to override.")
+                end
+            end
+        end
+    end
+end
+
+function anex_mobdeath_xp2() -- called via timer set by function anex_mobdeath_xp1
+    if (anex_automatic_onoff == "on") then
+        local tnl = tonumber(gmcp("char.status.tnl"))
+        if (can_get_new_cp == "yes") then
+            if (tnl < anex_tnl_cutoff) then
+                if (noexp_onoff == "off") then
+                    anex_set_noexp("on")
+                    InfoNote("\nSearch and Destroy: Turning 'noexp' ON (your TNL is less than ", anex_tnl_cutoff, ")")
+                end
+            else
+                if (noexp_onoff == "on") then
+                    anex_set_noexp("off")
+                    InfoNote(
+                        "\nSearch and Destroy: Turning 'noexp' OFF (your TNL is greater than ",
+                        anex_tnl_cutoff,
+                        ")"
+                    )
+                end
+            end
+        else
+            if (noexp_onoff == "on") then
+                anex_set_noexp("off")
+                InfoNote("\nSearch and Destroy: Turning 'noexp' OFF (you must level before taking a new campaign)")
+            end
+        end
+    end
+end
+
+function anex_check_tnl_silent() -- used by the window's clickable TNL cutoff changer
+    local tnl = tonumber(gmcp("char.status.tnl"))
+    if (can_get_new_cp == "yes") then
+        if (tnl < anex_tnl_cutoff) then
+            if (noexp_onoff == "off") then
+                anex_set_noexp("on")
+            end
+        else
+            if (noexp_onoff == "on") then
+                anex_set_noexp("off")
+            end
+        end
+    else
+        if (noexp_onoff == "on") then
+            anex_set_noexp("off")
+        end
+    end
+end
+
+function anex_automatic_on() -- Noexp will toggle automatically according to the TNL setting.
+    anex_automatic_onoff = "on"
+    noexp_onoff = "off"
+    snd_set_setting("anex_automatic_onoff", "on", false)
+    xg_draw_window()
+end
+
+function anex_automatic_off() -- Manually turns off experience and disables automatic toggling.  Typing noexp again turns the automatics back on.
+    anex_automatic_onoff = "off"
+    noexp_onoff = "on"
+    snd_set_setting("anex_automatic_onoff", "off", false)
+    xg_draw_window()
+end
+
+function xset_to_mark(name, line, wildcards)
+    local ri = current_room
+    local areaName = (type(wildcards[1]) == "string" and wildcards[1] ~= "" and wildcards[1]) or ri.arid
+    local roomID   = (type(tonumber(wildcards[2])) == "number" and wildcards[2] ~= "" and wildcards[2]) or ri.rmid
+
+    local db = assert(sqlite3.open(snd_db_file))
+    local operation = string.format("UPDATE areas SET start_room = %s WHERE key = %s;", fixsql(roomID), fixsql(areaName))
+    db:exec(operation)
+    db:close()
+
+    InfoNote("\nxset mark: Room ", roomID, " set as start of area ", areaName, ".\n")
+end
+
+--  [[ "xmark list [area]" ]]
+-- List all areas that have a start room set, optionally filtered by area key or name.
+function xmark_list(name, line, wildcards)
+    local filter = Trim(wildcards[1] or "")
+    local db  = db_open()
+    local rows = {}
+    local q
+    if filter ~= "" then
+        q = "SELECT key, name, start_room FROM areas " ..
+            "WHERE start_room IS NOT NULL " ..
+            "AND (key LIKE " .. fixsql("%" .. filter .. "%") ..
+            "  OR name LIKE " .. fixsql("%" .. filter .. "%") .. ") " ..
+            "ORDER BY key"
+    else
+        q = "SELECT key, name, start_room FROM areas " ..
+            "WHERE start_room IS NOT NULL ORDER BY key"
+    end
+    for row in db:nrows(q) do
+        rows[#rows + 1] = row
+    end
+    db_close(db)
+
+    if #rows == 0 then
+        InfoNote("SnD: No marks found" ..
+            (filter ~= "" and " matching '" .. filter .. "'" or "") .. ".")
+        return
+    end
+
+    InfoNote("\nSnD marks" ..
+        (filter ~= "" and " matching '" .. filter .. "'" or "") .. ":")
+    for _, row in ipairs(rows) do
+        InfoNote(string.format("  %-20s  %-35s  room %s",
+            row.key, row.name, tostring(row.start_room)))
+    end
+    print("")
+end
+
+--  [[ "xset gqalias" ]]
+function xset_gqalias(name, line, wildcards)
+    local x = xset_gq_check_extra_aliases
+    x = (x == "on") and "off" or "on"
+    xset_gq_check_extra_aliases = x
+    snd_set_setting("gq_check_extra_aliases", x, true)
+    apply_xset_gqalias()
+    InfoNote("\nExtra 'gq check' aliases are now ", string.upper(x), "\n")
+end
+
+function apply_xset_gqalias()
+    if (xset_gq_check_extra_aliases == "on") then
+        EnableAlias("extra_gq_check_aliases", true)
+    else
+        EnableAlias("extra_gq_check_aliases", false)
+    end
+end
+
+--	[[ "xset vidblain" ]]
+function xset_vidblain(name, line, wildcards)
+    local x = xset_vidblain_onoff
+    x = (x == "on") and "off" or "on"
+    xset_vidblain_onoff = x
+    snd_set_setting("vidblain_onoff", x, false)
+    InfoNote("\nVidblain navigation is now ", string.upper(x), "\n")
+end
+
+function xset_vidblain_setlevel(name, line, wildcards)
+    local x = tonumber(wildcards.level) or "check"
+    if (x == "check") then
+        InfoNote("\n'xset vidblain' portal level is ", xset_vidblain_level, "\n")
+    else
+        xset_vidblain_level = x
+        snd_set_setting("vidblain_level", tostring(x), false)
+        InfoNote("\n'xset vidblain' portal level set to ", x, "\n")
+    end
+end
+
+function is_vidblain_area(roomid)
+    local level = tier_level()
+    if (xset_vidblain_onoff == "on") and (level < xset_vidblain_level) then
+        -- Get the area key from the mapper rooms table for this room id.
+        local mapdb = assert(sqlite3.open(mapper_db_file))
+        local arid
+        for row in mapdb:nrows(string.format("SELECT area FROM rooms WHERE uid = %s", fixsql(roomid))) do
+            arid = row.area
+        end
+        mapdb:close()
+        if not arid then return false end
+        -- Check the vidblain flag in the SnD areas table.
+        local db = assert(sqlite3.open(snd_db_file))
+        local is_vidblain = false
+        for row in db:nrows(string.format("SELECT vidblain FROM areas WHERE key = %s", fixsql(arid))) do
+            is_vidblain = (row.vidblain == 1)
+        end
+        db:close()
+        return is_vidblain
+    else
+        return false
+    end
+end
+
+--	[[ Simulate cp ]]
+function simulate_cp(name, line, wildcards)
+    area_room_type   = (wildcards.type == "") and "area" or wildcards.type
+    current_activity = "cp"
+    local time_check = os.clock()
+    if ((time_check - last_cp_check) < 1.0) then return end
+    last_cp_check = time_check
+    cp_check_list = {}
+
+    -- Build fake style lines and call the Capture callback directly so simulate
+    -- works without the now-removed trigger machinery.
+    local mob_texts
+    if area_room_type == "area" then
+        mob_texts = {
+            "You still have to kill * red velvet (tm) lipstick (Andolor's Ocean Adventure Park)",
+            "You still have to kill * the crypt thing (The Gauntlet)",
+            "You still have to kill * an ultroloth (The Lower Planes)",
+            "You still have to kill * (Helper) Fenix (The School of Horror)",
+            "You still have to kill * the head necromancer's assistant (Necromancers' Guild)",
+            "You still have to kill * Isscheburqua (Insanitaria)",
+            "You still have to kill * a rook citizen (Avian Kingdom - Dead)",           -- dead
+            "You still have to kill * Lea, the farmer's daughter (Farmyard)",           -- unknown
+            "You still have to kill * a former court jester (The Labyrinth)",
+            "You still have to kill * Parent (A Cold Path - Dead)",                     -- dead+unknown
+            "You still have to kill * a wealth redistribution specialist (Empyrean, Streets of Downfall)",           -- long unknown
+            "You still have to kill * a wealth redistribution specialist (Empyrean, Streets of Downfall and Upfall and Other Things)", -- really long unknown
+            "You still have to kill * Laurence, archangel of the sword and shield and other implements of war (The Flying Citadel)", -- long known
+            "You still have to kill * a sinister vandal (The Three Pillars of Diatz)",  -- noscan
+            "You still have to kill * a hideously hairy spider (The Temple of Shouggoth)", -- nowhere
+            "You still have to kill * Don Crumble (Zangar's Demonic Grotto)",           -- nohunt
+            "You still have to kill * A very large firefly (Kobold Siege Camp)",        -- nohunt/nowhere
+        }
+    else
+        mob_texts = {
+            "You still have to kill * red velvet (tm) lipstick (Skirting a Fissure)",
+            "You still have to kill * a staggering barbegazi (Cell block A (Lower))",
+            "You still have to kill * a former court jester (The Labyrinth)",
+            "You still have to kill * the iron golem (Audience Chamber)",
+            "You still have to kill * probably a fake mob (Probably a Fake Room)",
+            "You still have to kill * Jarre (The UnderDark - Dead)",                    -- known dead
+            "You still have to kill * the heart of a sandstorm (Buried in the Great Desert's unrelenting dunes)", -- long
+            "You still have to kill * Parent (The Kitchen)",                            -- lots of options
+            "You still have to kill * A sprite prisoner (A cell)",
+            "You still have to kill * the cutpurse (Road of Shadows)",                  -- many rooms
+            "You still have to kill * definitely a fake mob (Fake Area - Dead)",        -- unknown dead
+            "You still have to kill * the gibbering mouther (Dining Hall)",             -- lots of options
+            "You still have to kill * a sinister vandal (In The Courtyard)",            -- noscan
+            "You still have to kill * a hideously hairy spider (The Landing)",          -- nowhere
+            "You still have to kill * Sssssuper long mob name that should break formatting (This can't be a real room, right)", -- long unknown
+            "You still have to kill * Laurence, archangel of the sword and shield and other implements of war (In the clouds)", -- long known
+            "You still have to kill * a giant bee (An Impossibly Dark Intersection in the Labyrinth)", -- long room name
+        }
+    end
+    local fake_styles = {}
+    for _, text in ipairs(mob_texts) do
+        fake_styles[#fake_styles+1] = {{text = text}}
+    end
+    on_cp_check_captured(fake_styles, "", "")
+end
+
+function spoof_gq_level_range()
+    local level = tonumber(gmcp("char.status.level"))
+    local min = math.max(level - 10, 1)
+    local max = math.min(level + 10, 201)
+
+    return min, max
+end
+
+function simulate_declare_gq(name, line, wildcards)
+    local min, max = spoof_gq_level_range()
+    local gq_num
+    if wildcards.num ~= "" then
+        gq_num = math.min(10000, tonumber(wildcards.num))
+    else
+        gq_num = math.random(1, 10000)
+    end
+
+    Simulate(string.format("Global Quest: Global quest #%i has been declared for levels %i to %i\n", gq_num, min, max))
+end
+
+function xtest_debug_gquest()
+    if debug_mode ~= "on" then
+        xtest_debug()
+    end
+
+    player_not_on_gq()
+
+    gqid_started = "-1"
+    -- gqid_joined = "-1"
+    -- gqid_extended = "-1"
+
+    debug_gq_mode = not debug_gq_mode
+
+    mock_gquests = {}
+    DebugNote("GQuest Debug mode ", debug_gq_mode and "enabled" or "disabled")
+end
+
+function assert_debug_gq_mode()
+    if not debug_gq_mode then
+        ErrorNote("Not in Gquest testing mode.")
+        return false
+    end
+
+    return true
+end
+
+function xtest_gq_waiting(name, line, wildcards)
+    if not assert_debug_gq_mode() then
+        return
+    end
+
+    local gqid = tonumber(wildcards.num) or 123
+    mock_gquests[gqid] = {state = "waiting", id = gqid}
+    Simulate(string.format("Global Quest: Global quest # %i has been declared for levels 1 to 201\n", gqid))
+    DebugNote("Added mock gquest ", gqid, " in waiting state.")
+end
+
+function xtest_gq_start(name, line, wildcards)
+    if not assert_debug_gq_mode() then
+        return
+    end
+    local targets
+    local gqid = tonumber(wildcards.num) or 123
+    local type = wildcards.type
+
+    if type == "" then
+        type = "area"
+    end
+
+    if type == "area" then
+        targets = gq_area_targets()
+    else
+        targets = gq_room_targets()
+    end
+
+    mock_gquests[gqid] = {state = "running", id = gqid, targets = targets}
+    Simulate(string.format("Global Quest: Global quest # %i for levels 1 to 201 has now started.\n", gqid))
+    DebugNote("Added mock gquest ", gqid, " (", type .. "-type", ") in running state.")
+end
+
+function xtest_gq_join(name, line, wildcards)
+    if not assert_debug_gq_mode() then
+        return
+    end
+    local gqid = tonumber(wildcards.num)
+
+    if gqid == 0 then
+        mock_gqid_joined = 0
+        gqid_joined = "-1"
+        DebugNote("Removed from any gquests")
+    elseif wildcards.silent == "s" then
+        xtest_gq_joined_already(gqid)
+    else
+        xtest_gq_join_now(gqid)
+    end
+end
+
+function xtest_gq_joined_already(gqid)
+    if mock_gquests[gqid] then
+        mock_gqid_joined = gqid
+        DebugNote("Silently joining gq ", gqid)
+    else
+        DebugNote("No mock gq #", gqid, " is running")
+    end
+end
+
+function xtest_gq_join_now(gqid)
+    if mock_gquests[gqid] then
+        mock_gqid_joined = gqid
+        Simulate(
+            string.format("You have now joined Global Quest # %i. See 'help gquest' for available commands.\n", gqid)
+        )
+    else
+        DebugNote("No mock gq #", gqid, " is running")
+    end
+end
+
+function xtest_gq_end(name, line, wildcards)
+    if not assert_debug_gq_mode() then
+        return
+    end
+    local gqid = tonumber(wildcards.num) or 123
+    if mock_gquests[gqid] then
+        simulate_gq_end(gqid)
+        mock_gquests[gqid] = nil
+    else
+        DebugNote("No mock gq #", gqid, " is running")
+    end
+end
+
+function xtest_gq_win(name, line, wildcards)
+    if not assert_debug_gq_mode() then
+        return
+    end
+    local gqid = tonumber(wildcards.num) or 123
+    if mock_gquests[gqid] then
+        simulate_gq_win(gqid)
+        mock_gquests[gqid] = nil
+    else
+        DebugNote("No mock gq #", gqid, " is running")
+    end
+end
+
+function xtest_gq_lose(name, line, wildcards)
+    if not assert_debug_gq_mode() then
+        return
+    end
+
+    local gqid = tonumber(wildcards.num) or 123
+    local noextended = #wildcards.noextended > 0
+    if mock_gquests[gqid] then
+        simulate_gq_lose(gqid, noextended)
+        if noextended then
+            mock_gquests[gqid] = nil
+        end
+    else
+        DebugNote("No mock gq #", gqid, " is running")
+    end
+end
+
+function xtest_gq_kill(name, line, wildcards)
+    if not assert_debug_gq_mode() then
+        return
+    end
+
+    local kill_num = tonumber(wildcards.num) or 1
+    if mock_gquests[mock_gqid_joined] then
+        simulate_gq_kill(kill_num)
+    elseif mock_gqid_joined then
+        DebugNote("No mock gq #", mock_gqid_joined, " is running")
+    else
+        DebugNote("You're not in a gquest")
+    end
+end
+
+function xtest_gq_quit(name, line, wildcards)
+    if not assert_debug_gq_mode() then
+        return
+    end
+
+    local gqid = tonumber(wildcards.num) or 123
+    Simulate(string.format("You are no longer part of Global Quest # %i and will be unable to rejoin.\n", gqid))
+end
+
+function xtest_xcp(name, line, wildcards)
+    local index = tonumber(wildcards.num) or 1
+    if index > 0 and #main_target_list > 0 then
+        index = math.min(#main_target_list, index)
+
+        set_target_from_main_target_list(index)
+        DebugNote("Targeting xcp ", index)
+
+        xg_draw_window()
+    else
+        DebugNote("Clearing xcp index")
+        xcp_clear_target(true)
+    end
+end
+
+function simulate_gq_info(number, targets)
+    -- Build a pg record and call on_gq_info_parsed directly so simulation works
+    -- without the now-removed trigger-based gq info machinery.
+    local pg = {
+        id       = tostring(number),
+        extended = false,
+        finished = false,
+        efflvl   = math.floor((186 + 201) / 2),   -- matches simulated level range
+        targets  = {},
+    }
+    if targets then
+        for _, mob in ipairs(targets) do
+            local qty = tostring(mob.count or 1)
+            -- parse_mob_target expects "mob name (location)" format
+            local target_str = mob.name .. " (" .. mob.location .. ")"
+            local m, loc = parse_mob_target(target_str)
+            if m then
+                table.insert(pg.targets, {mob=m, qty=qty, loc=loc})
+            end
+        end
+    end
+    on_gq_info_parsed(pg)
+end
+
+function simulate_gq_check(targets)
+    -- Build fake style lines and call the Capture callback directly.
+    local fake_styles = {}
+    for _, mob in ipairs(targets) do
+        local text = string.format("You still have to kill %d * %s (%s)",
+            mob.count or 1, mob.name, mob.location)
+        fake_styles[#fake_styles+1] = {{text = text}}
+    end
+    on_gq_check_captured(fake_styles, "", "")
+end
+
+function gq_area_targets()
+    return {
+        {count = 1, name = "red velvet (tm) lipstick", location = "Andolor's Ocean Adventure Park"},
+        {count = 2, name = "a horse", location = "Kul Tiras"},
+        {count = 1, name = "a horse", location = "Kul Tiras"},
+        {count = 1, name = "a treble clef", location = "Art of Melody"},
+        {count = 1, name = "a spider", location = "Gallows Hill"},
+        {count = 2, name = "800 baby spiders", location = "Gallows Hill"},
+        {count = 1, name = "a Boy", location = "Gallows Hill"},
+        {count = 1, name = "some wicked ale", location = "Gallows Hill"},
+        {count = 3, name = "a grub", location = "Kimr's Farm"},
+        {count = 1, name = "a bobwhite quail", location = "The Forest of Li'Dnesh"},
+        {count = 1, name = "a small dark viper", location = "The Forest of Li'Dnesh"},
+        {count = 1, name = "a hook-tailed dragonfly", location = "The Forest of Li'Dnesh"},
+        {count = 2, name = "a golden honeybee", location = "The Forest of Li'Dnesh"},
+        {count = 1, name = "a tiny red imp", location = "The Grand City of Aylor"},
+        {count = 1, name = "a little girl", location = "The Land of the Beer Goblins"},
+        {count = 1, name = "a true believer", location = "The Path of the Believer"}
+    }
+end
+
+function gq_room_targets()
+    return {
+        {count = 1, name = "red velvet (tm) lipstick", location = "Cell block A (Lower)"},
+        {count = 1, name = "Earshda the receptionist", location = "The Reception Area"},
+        {count = 1, name = "a chorus girl", location = "Upstage Centre"},
+        {count = 1, name = "a caretaker", location = "Entering Room 5"},
+        {count = 1, name = "a Nulan'Boar mother", location = "A small grassy paddock"},
+        {count = 1, name = "an agathinon aasimon", location = "In a Great Field on Arcadia"},
+        {count = 1, name = "Prince Beelzebub", location = "The Training Field"},
+        {count = 1, name = "an ant", location = "The Land of Oz"},
+        {count = 1, name = "a taller man", location = "Patient Room 5"},
+        {count = 1, name = "a Mud Dweller", location = "Within The Secret Passage"},
+        {count = 1, name = "Duke Malagard", location = "The Jewelled Palace"},
+        {count = 1, name = "a rabid rabbit", location = "Path to the castle"},
+        {count = 1, name = "a heavily built goblin guard", location = "Before the fortress"},
+        {count = 1, name = "a cottonmouth", location = "Thick vegetation on the river bank"},
+        {count = 1, name = "a light aasimon", location = "On the Belierin layer of the Elysium"}
+    }
+end
+
+function simulate_gq_end(gqid)
+    Simulate(string.format("Global Quest: Global quest # %i (extended) is now over.\n", gqid))
+end
+
+function simulate_gq_win(gqid)
+    simulate_gq_winner_message(gqid, gmcp("char.base.name"))
+end
+
+function simulate_gq_lose(gqid, extended)
+    simulate_gq_winner_message(gqid, "Someone Else")
+    if extended then
+        Simulate(
+            string.format("Global Quest: Global Quest # %i will go into extended time for 5 more minutes.\n", gqid)
+        )
+    end
+end
+
+function simulate_gq_winner_message(gqid, name)
+    Simulate(string.format("Global Quest: Global Quest # %i has been won by %s - 53rd win.\n", gqid, name))
+end
+
+function simulate_send_gq_info(gqid)
+    DebugNote("Simulating ", string.format("gq info %s", tostring(gqid)))
+    local gq_info
+    if gqid then
+        gq_info = mock_gquests[tonumber(gqid)]
+    elseif mock_gqid_joined then
+        gq_info = mock_gquests[mock_gqid_joined]
+    end
+
+    if gq_info then
+        simulate_gq_info(gq_info.id, gq_info.targets)
+    else
+        local first_gq
+        local gq_count = 0
+
+        for k, v in pairs(mock_gquests) do
+            gq_count = gq_count + 1
+            first_gq = first_gq or v
+        end
+
+        if gq_count == 0 then
+            Simulate("There are no global quests running.\n")
+        elseif gq_count == 1 then
+            simulate_gq_info(first_gq.id)
+        else
+            Simulate("There is more than one global quest running.\n")
+        end
+    end
+end
+
+function simulate_send_gq_check()
+    DebugNote("Simulating ", "gq check")
+    if mock_gqid_joined then
+        local gq_info = mock_gquests[mock_gqid_joined]
+        if gq_info then
+            if gq_info.state == "running" then
+                simulate_gq_check(gq_info.targets)
+            else
+                Simulate(string.format("Global quest # %i has not yet started.", gq_info.id))
+            end
+            return
+        end
+    end
+    Simulate("You are not in a global quest.\n")
+end
+
+function simulate_gq_kill(kill_num)
+    local mock_gq = mock_gquests[mock_gqid_joined]
+
+    if mock_gq.targets and #mock_gq.targets >= kill_num then
+        last_mob_killed = mock_gq.targets[kill_num].name
+
+        local curr_arid = current_room.arid
+
+        if mock_gq.targets[kill_num].count > 1 then
+            mock_gq.targets[kill_num].count = mock_gq.targets[kill_num].count - 1
+        else
+            table.remove(mock_gq.targets, kill_num)
+        end
+
+        -- local old_arid = current_room.arid
+        -- current_room.arid = mock_gq.targets[kill_num]
+        Simulate("Congratulations, that was one of the GLOBAL QUEST mobs!\n")
+
+        if #mock_gq.targets == 0 then
+            simulate_gq_win(mock_gq.id)
+        end
+        current_room.arid = curr_arid
+    else
+        DebugNote("Target ", "#", "", kill_num, " is not on this gquest.")
+    end
+end
+
+function echo_gqid_joined()
+    if gqid_joined ~= "-1" then
+        DebugNote("You are on gq # ", gqid_joined)
+    else
+        DebugNote("You are not on a gquest")
+    end
+end
+
+function spoof_level(name, line, wildcards)
+    local level = math.min(201, math.max(1, wildcards.level))
+    gq_info_efflvl = level
+    cp_info_level = level
+    Note("Pretending level is ", level, " for testing purposes\n")
+end
+
+function simulate_quest(name, line, wildcards)
+    local result = {
+        targ = "a garden snake",
+        area = "Kimr's Farm",
+        room = "Old Farm Lane"
+    }
+    local status = wildcards.status
+    if #status == 0 then
+        status = "status"
+    end
+
+    InfoNote("Simulating quest with status ", status)
+
+    if status == "start" then
+        result.action = "start"
+    elseif status == "status" then
+        result.action = "status"
+        result.timer = 60
+    elseif status == "killed" then
+        result.action = "killed"
+    elseif status == "comp" then
+        result.action = "comp"
+    elseif status == "fail" then
+        result.action = "fail"
+    elseif status == "reset" then
+        result.action = "reset"
+    elseif status == "ready" then
+        result.action = "ready"
+    elseif status == "timeout" then
+        result.action = "timeout"
+    elseif status == "statkilled" then
+        result.action = "status"
+        result.target = "killed"
+    elseif status == "wait" then
+        result.action = "status"
+        result.wait = 60
+    end
+
+    quest_status_gmcp(result)
+end
+
+-- [[ Room notes ]]
+function room_note_area(name, line, wildcards)
+    if (wildcards.arid == "") then
+        --get_notes(current_room.arid, nil)
+        get_notes(gmcp("room.info.zone"), nil)
+    else
+        get_notes(wildcards.arid, nil)
+    end
+end
+
+function room_note(name, line, wildcards)
+    --get_notes(nil, current_room.rmid)
+    if not get_notes(nil, gmcp("room.info.num")) then
+        InfoNote("No notes found for this room.\n")
+    end
+end
+
+function room_note_room(name, line, wildcards)
+    if not get_notes(nil, wildcards.roomid) then
+        InfoNote(string.format("No notes found for room %s.\n", wildcards.roomid))
+    end
+end
+
+function get_notes(arid, roomid, text_only)
+    --local worldPath = GetInfo(66)..Trim(sanitize_filename(WorldName()))
+    --local db = assert(sqlite3.open(worldPath .. ".db"))
+    local db = assert(sqlite3.open(mapper_db_file))
+    local sql = " SELECT b.uid, b.notes "
+    sql = sql .. " FROM bookmarks b "
+    if arid then
+        sql = sql .. " INNER JOIN rooms r ON b.uid = r.uid "
+        sql = sql .. " WHERE r.area = " .. fixsql(arid)
+    else
+        sql = sql .. " WHERE b.uid = " .. fixsql(roomid)
+    end
+    sql = sql .. " ORDER BY b.uid "
+    local found_notes = false
+    if (arid ~= nil) then
+        Simulate("\nNotes for " .. getAreaNameFromId(arid) .. "\n")
+    end
+    for row in db:nrows(sql) do
+        found_notes = true
+        if (text_only == true) then
+            local line = string.format("    note:'%s'", strip_colours(row.notes))
+            Hyperlink("xmapper move " .. row.uid, line, "go to room " .. row.uid, "lightblue", "black", 0, 1)
+        else
+            local line = string.format("    (%s) %s", row.uid, row.notes)
+            local styles = ColoursToStyles(line, ColourNameToRGB("lightblue"), ColourNameToRGB("black"), 0, 0)
+
+            for _, style in pairs(styles[1]) do
+                Hyperlink(
+                    "xmapper move " .. row.uid,
+                    style.text,
+                    "go to room " .. row.uid,
+                    RGBColourToName(style.textcolour),
+                    RGBColourToName(style.backcolour),
+                    0,
+                    1
+                )
+            end
+        end
+
+        print("")
+    end
+    db:close()
+    if not found_notes then
+        if arid then
+            Simulate("\tNo notes.\n")
+        else
+            return false
+        end
+    end
+    return true
+end
+
+function getAreaIdFromName(name)
+    local db = assert(sqlite3.open(mapper_db_file))
+    local sql = "SELECT uid FROM areas WHERE name = %s"
+    for row in db:nrows(string.format(sql, fixsql(name))) do
+        db:close()
+        return row.uid
+    end
+    db:close()
+    return name
+end
+
+function getAreaNameFromId(arid)
+    local db = assert(sqlite3.open(mapper_db_file))
+    local sql = "SELECT name FROM areas WHERE uid = %s"
+    for row in db:nrows(string.format(sql, fixsql(arid))) do
+        db:close()
+        return row.name
+    end
+    db:close()
+    return arid
+end
+
+function getAreaFromRoomId(room_id)
+    local db = assert(sqlite3.open(mapper_db_file))
+    local sql = "SELECT area FROM rooms WHERE uid = %s"
+    for row in db:nrows(string.format(sql, fixsql(room_id))) do
+        db:close()
+        return row.area
+    end
+    db:close()
+    return room_id
+end
+
+function getAreaUid(name)
+    local db = assert(sqlite3.open(mapper_db_file))
+    local sql = "SELECT uid FROM areas WHERE name = %s order by uid "
+    local areas = {}
+    local index = 0
+    for row in db:nrows(string.format(sql, fixsql(name))) do
+        index = index + 1
+        areas[index] = {uid = row.uid, name = name}
+    end
+    db:close()
+    return areas
+end
+
+--	[[ SQL execution ]]
+function RunSql(name, line, wildcards)
+    local worldPath = GetInfo(66) .. "/worlds/plugins/"
+    local db = assert(sqlite3.open(snd_db_file))
+    local index = 0
+    local sql = wildcards.sql
+    ColourNote("#00C040", "", "\nrunning sql: " .. sql)
+    for row in db:nrows(sql) do
+        index = index + 1
+        print("----------- record " .. index .. " -----------")
+        -- tprint(row)
+        print(serialize.save("row", row))
+    end
+    db:close()
+end
+
+function ExecSql(name, line, wildcards)
+    local db = assert(sqlite3.open(mapper_db_file))
+    Note("executing " .. wildcards.sql)
+    --	dbcheck (db:execute (fixsql(wildcards.sql)))
+    db:execute(wildcards.sql)
+    db:close()
+    Note("ok")
+end
+
+function xmapper_move(name, line, wildcards)
+    local r = wildcards.roomid
+    local s = wildcards.speed
+    if (r == "-1") then
+        InfoNote("\nSearch and Destroy:  Can't go to room id -1 (nomap room)\n")
+    elseif (r ~= "") then
+        do_mapper_goto(r, s)
+    end
+end
+
+function quest_timer_tick()
+    if not next_quest_time then return end
+    local mins = math.max(0, math.ceil((next_quest_time - os.time()) / 60))
+    local new_text
+    if quest_target and (quest_target.qstat == "2" or quest_target.qstat == "3") then
+        new_text = string.format("Quest time: %im", mins)
+    else
+        new_text = string.format("Next quest: %im", mins)
+    end
+    if new_text ~= next_quest_text then
+        next_quest_text = new_text
+        if type(xg_draw_window) == "function" then
+            xg_draw_window()
+        end
+    end
+end
+function OnPluginSaveState()
+    if type(xg_save_window_state) == "function" then
+        xg_save_window_state()
+    end
+end
+
+function OnPluginClose()
+    if type(xg_save_window_state) == "function" then
+        xg_save_window_state()
+    end
+    if type(xg_destroy_window) == "function" then
+        xg_destroy_window()
+    end
+end
+
+function OnPluginDisconnect()
+    if type(xg_destroy_window) == "function" then
+        xg_destroy_window()
+    end
+end
+
+function set_speed(name, line, wildcards)
+    if (wildcards.speed ~= "") then
+        speed = wildcards.speed
+    else
+        if (speed == "walk") then
+            speed = "run"
+        else
+            speed = "walk"
+        end
+    end
+    InfoNote("Move speed:", speed)
+end
+
+-- Internal Utilities
+
+function int(n)
+    if not tonumber(n) then
+        return
+    else
+        return math.floor(n)
+    end
+end
+
+function md5(s)
+    local hash = utils.tohex(utils.md5(tostring(s)))
+    return hash
+end
+
+function quote(text)
+    return '"' .. text .. '"'
+end
+
+
+-- [[ Random stuff that doesn't fit anywhere else (?) ]]
+function xtest_roomhist()
+    ColourNote(
+        "#00FFFF",
+        "",
+        "\ni: 0    r: " .. string.format("%-5s", room_history[0].rmid) .. "  a: " .. room_history[0].arid
+    )
+    for i, v in ipairs(room_history) do
+        print(
+            "i: " ..
+                string.format("%-3s", i) ..
+                    "  r: " .. string.format("%-5s", v.rmid) .. "  a: " .. string.format("%-10s", v.arid)
+        )
+    end
+    print("")
+end
+
+function xtest_areadata()
+    local db = assert(sqlite3.open(snd_db_file))
+    local sql = "SELECT key, name, minlvl, maxlvl, start_room, noquest, vidblain FROM areas ORDER BY key"
+    ColourNote("#00C040", "", "\nArea data from SnD DB:")
+    ColourNote("dimgray", "", string.format("%-15s %-38s %4s %4s  %-6s  nq vid",
+        "key", "name", "min", "max", "start"))
+    for row in db:nrows(sql) do
+        print(string.format("%-15s %-38s %4s %4s  %-6s  %s  %s",
+            row.key or "",
+            row.name or "",
+            row.minlvl or "?",
+            row.maxlvl or "?",
+            row.start_room or "?",
+            row.noquest == 1 and "Y" or "N",
+            row.vidblain == 1 and "Y" or "N"))
+    end
+    db:close()
+end
+
+function xtest_mcvars()
+    local t = GetVariableList()
+    tprint(t)
+end
+
+function xmap_rooms_linking_here(name, line, wildcards)
+    local room_id = tonumber(wildcards.room_id) or tonumber(current_room.rmid) or -1
+    local r1 = {}
+    local list = {}
+    local Q1 = string.format("SELECT uid, name, area FROM rooms WHERE uid = %s ", fixsql(room_id))
+    local Q2 =
+        string.format(
+        "SELECT exits.dir as edir, exits.fromuid as efrom, exits.touid as eto, rooms.name as name, rooms.area as arid FROM exits,rooms WHERE exits.touid = %s AND rooms.uid = exits.fromuid ORDER BY efrom ASC ",
+        fixsql(room_id)
+    )
+    local db = assert(sqlite3.open(mapper_db_file))
+    for row in db:nrows(Q1) do
+        r1 = {rmid = row.uid, arid = row.area, roomname = row.name}
+    end
+    for row in db:nrows(Q2) do
+        local ru = string.format("%5s", row.efrom)
+        list[ru] = {
+            roomname = row.name,
+            arid = row.arid,
+            exit_dir = row.edir
+        }
+    end
+    db:close()
+    print("\n" .. "Rooms linking to " .. r1.rmid .. ": " .. r1.roomname .. " (" .. r1.arid .. ")" .. "\n")
+    for k, v in spairs(list) do
+        print(k .. ": " .. v.roomname .. " (" .. v.arid .. ") - " .. v.exit_dir)
+    end
+    print("")
+end
+
+function xtest_loadroom(name, line, wildcards)
+    local ri = current_room
+    local room_id = tonumber(wildcards.room_id) or tonumber(ri.rmid) or -1
+    local roomdata = {}
+    local sql_roomdata =
+        "SELECT uid, name, area, info, noportal, norecall, ignore_exits_mismatch " .. "FROM rooms " .. "WHERE uid = %s "
+    local sql_exitrow = "SELECT dir, fromuid, touid, level " .. "FROM exits " .. "WHERE fromuid = %s "
+    local sel_roomdata = string.format(sql_roomdata, fixsql(room_id))
+    local sel_exits = string.format(sql_exitrow, fixsql(room_id))
+    local db_results_found = false
+    local db = assert(sqlite3.open(mapper_db_file))
+    for row in db:nrows(sel_roomdata) do
+        roomdata = {
+            roomid = row.uid,
+            roomname = row.name or "-no room name-",
+            arid = row.area or "-no area-",
+            --building = row.building,
+            --terrain = row.terrain,
+            info = row.info or "-no info-",
+            --notes = row.notes,
+            --x = row.x or 0,
+            --y = row.y or 0,
+            --z = row.z or 0,
+            noportal = row.noportal or 0,
+            norecall = row.norecall or 0,
+            exits = {},
+            exit_locks = {},
+            ig_ex_mis = (row.ignore_exits_mismatch == 1)
+        }
+        for exitrow in db:nrows(sel_exits) do
+            roomdata.exits[exitrow.dir] = tostring(exitrow.touid)
+            roomdata.exit_locks[exitrow.dir] = tostring(exitrow.level)
+        end -- for each ex
+    end
+    db:close()
+
+    if not (roomdata.roomid) then
+        roomdata = {
+            roomid = tostring(room_id),
+            roomname = "-1",
+            arid = "-1",
+            info = "none",
+            noportal = 0,
+            norecall = 0,
+            exits = {},
+            exit_locks = {},
+            ig_ex_mis = false
+        }
+    end
+    table.insert(xtest_loadroom_table, roomdata)
+    tprint(xtest_loadroom_table)
+    print("")
+end
+
+function xtest_popmsg(name, line, wildcards)
+end
+
+function xtest_set_qt(name, line, wildcards)
+    local qt = tonumber(wildcards.qt)
+    next_quest_time = os.time() + qt * 60
+    quest_timer_tick()
+end
+
+function xtest_print_target()
+    DebugNote("Target is: ", target_as_json())
+end
+
+function xtest_debug(name, line, wildcards)
+    if debug_mode == "on" then
+        InfoNote("Debug mode ", "disabled\n")
+        debug_mode = "off"
+    else
+        InfoNote("Debug mode ", "enabled\n")
+        debug_mode = "on"
+    end
+    snd_set_setting("debug_mode", debug_mode, true)
+end
+
+
+-- [[ New code ]]
+function check_for_updates()
+    if automatic_update_checks ~= "on" then
+        return
+    elseif GetInfo(304) >= last_update_check + UPDATE_CHECK_INTERVAL then
+        force_update_check()
+    end
+end
+
+function force_update_check(log_no_updates)
+    DebugNote("Checking if there's an updated version available")
+    last_update_check = GetInfo(304)
+    download_version_file(show_update_banner, log_no_updates)
+end
+
+function download_plugin(version, callback)
+    DebugNote("Downloading plugin version ", version)
+    local url = snd_raw_url("Search_and_Destroy.xml", version)
+    download_file(url, callback)
+end
+
+function download_version_file(callback, log_no_updates)
+    DebugNote("Attempting to download master")
+    local url = versionURL
+    download_file(url, check_version_callback(callback, log_no_updates))
+end
+
+function download_file(url, callback)
+    DebugNote("Starting download of ", url)
+
+    if async_ok then
+        plugin_page = async.doAsyncRemoteRequest(url, callback, "HTTPS")
+    else
+        ImportantNote("Error on file download")
+    end
+end
+
+function check_version_callback(callback, log_no_updates)
+    return function(retval, page, status, headers, full_status, request_url)
+        if status ~= 200 then
+            DebugNote("check_version_callback got ", status)
+            if log_no_updates then
+                ErrorNote("Error while fetching latest version number")
+            end
+            return
+        end
+        local upstream_version = Trim(page)
+        if upstream_version ~= tostring(PLUGIN_VERSION) then
+            callback(upstream_version)
+        elseif log_no_updates then
+            InfoNote("Search&Destroy: No new updates available")
+        end
+    end
+end
+
+function do_update(version)
+    DebugNote("Attempting to do_update with version ", version)
+    download_plugin("v" .. version, callback_update_plugin)
+end
+
+function callback_update_plugin(retval, page, status, headers, full_status, request_url)
+    if status ~= 200 then
+        DebugNote("callback_update_plugin got ", status)
+        ErrorNote("Error while fetching latest plugin version")
+        return
+    end
+    local upstream_version = tonumber(string.match(page, '<plugin version="([0-9%.]+)"'))
+    local pluginVer = PLUGIN_VERSION
+    if prevBeta then
+        pluginVer = pluginVer .. " (Beta " .. prevBeta .. ")"
+    end
+    if betaVersion then 
+        upstream_version = upstream_version .. " (Beta " .. betaVersion .. ")"
+    end
+
+    ImportantNote("Updating from version ", pluginVer, " to ", upstream_version, ". Do not touch anything!")
+    local file = io.open(GetPluginInfo(GetPluginID(), 6), "w")
+    file:write(page)
+    file:close()
+    if "" == GetAlphaOption("script_prefix") then
+        SetAlphaOption("script_prefix", "\\\\\\")
+    end
+    Execute(
+        GetAlphaOption("script_prefix") ..
+            'DoAfterSpecial(1, "ReloadPlugin(\'' .. GetPluginID() .. '\')", sendto.script)'
+    )
+    ImportantNote("Update complete!")
+end -- end Update code
+
+function show_update_banner(upstream_version)
+    ColourNote(NOTE_COLORS.INFO, "", "\n+=================================================================+")
+    ColourNote("silver", "", "              Search & Destroy ", "lime", "", "New Version Available")
+    print("")
+    ColourNote(
+        "silver",
+        "",
+        "             Current version: ",
+        "tomato",
+        "",
+        PLUGIN_VERSION,
+        "silver",
+        "",
+        " Latest version: ",
+        "lime",
+        "",
+        upstream_version
+    )
+    print("")
+    ColourNote(
+        "silver",
+        "",
+        "         Use ",
+        "lime",
+        "",
+        "snd update",
+        "silver",
+        "",
+        " to upgrade to the latest version."
+    )
+    print("")
+    ColourNote(
+        "silver",
+        "",
+        "     Use ",
+        "tomato",
+        "",
+        "snd check_update",
+        "silver",
+        "",
+        " to disable automatic version checks."
+    )
+    ColourNote(NOTE_COLORS.INFO, "", "+=================================================================+\n")
+end
+
+function toggle_automatic_update_checking()
+    if automatic_update_checks == "on" then
+        automatic_update_checks = "off"
+        EnableTimer("update_check_tick", false)
+    else
+        automatic_update_checks = "on"
+        force_update_check()
+        EnableTimer("update_check_tick", true)
+    end
+    snd_set_setting("automatic_update_checks", automatic_update_checks, true)
+
+    InfoNote("\nSearch&Destroy automatic update checking is now ", string.upper(automatic_update_checks))
+end
+
+function sndReload()
+    Execute(
+        GetAlphaOption("script_prefix") ..
+            'DoAfterSpecial(1, "ReloadPlugin(\'' .. GetPluginID() .. '\')", sendto.script)'
+    )
+end
+
+function copyPwarWarn()
+    InfoNote(
+        "Are you sure you want to do this? It will wipe out your existing mob and keyword data. Type ",
+        "snd migrate confirm",
+        " to migrate data from your pwar database."
+    )
+end
+
+function copyPwarDB()
+    local success, err = pcall(rawCopyPwarDB)
+    if success then
+        InfoNote("Finished migrating! You can now resume play!")
+    else
+        ErrorNote(err)
+    end
+end
+
+function rawCopyPwarDB()
+    local pwar_path = GetInfo(60) .. "WinkleGold_Database.db"
+    local f = io.open(pwar_path, "r")
+    if not f then
+        error(
+            "To start migration process, please locate the file " ..
+            "'WinkleGold_Database.db' and move it to the plugins folder. Then try again."
+        )
+    end
+    f:close()
+
+    InfoNote("Now rebuilding the database with data from Pwar's Search & Destroy.")
+
+    local PwarDb   = assert(sqlite3.open(pwar_path))
+    local mapperDb = assert(sqlite3.open(GetInfo(66) .. "Aardwolf.db"))
+    local SnDdb    = db_open()
+
+    -- ── Step 1: Clear existing mob and global-keyword data ───────────────────
+    InfoNote("Clearing existing mob data...")
+    execute_in_transaction(SnDdb, function(db)
+        dbcheck(db, db:exec("DELETE FROM mob_sightings"),
+                "pwar: clear mob_sightings")
+        dbcheck(db, db:exec("DELETE FROM mob_kills"),
+                "pwar: clear mob_kills")
+        dbcheck(db, db:exec("DELETE FROM mob_keywords WHERE char_id IS NULL"),
+                "pwar: clear global mob_keywords")
+    end)
+
+    -- ── Step 2: Load mob rows from Pwar and collect room IDs ─────────────────
+    InfoNote("Reading Pwar mob data...")
+    local migrateTable = {}
+    local roomsToLookup = {}
+    for row in PwarDb:nrows(
+        "SELECT roomid, mobname, sum(freq) AS count FROM mobs GROUP BY roomid, mobname"
+    ) do
+        migrateTable[#migrateTable + 1] = {
+            roomid = row.roomid,
+            mob    = row.mobname,
+            count  = row.count,
+        }
+        roomsToLookup[row.roomid] = true
+    end
+
+    -- ── Step 3: Resolve room IDs → area key + room name from mapper DB ───────
+    InfoNote("Resolving room locations from mapper...")
+    local roomsById = {}
+    local id_list = {}
+    for rid in pairs(roomsToLookup) do
+        id_list[#id_list + 1] = rid
+    end
+
+    -- Chunk the IN clause to stay within SQLite expression limits.
+    local CHUNK = 500
+    for i = 1, #id_list, CHUNK do
+        local chunk = {}
+        for j = i, math.min(i + CHUNK - 1, #id_list) do
+            chunk[#chunk + 1] = id_list[j]
+        end
+        for row in mapperDb:nrows(
+            "SELECT uid, area, name FROM rooms WHERE uid IN (" ..
+            table.concat(chunk, ",") .. ")"
+        ) do
+            roomsById[tostring(row.uid)] = { area = row.area, name = row.name }
+        end
+    end
+    mapperDb:close()
+
+    -- ── Step 4: Migrate mob sightings → mob_sightings ────────────────────────
+    InfoNote("Migrating mob sightings...")
+    local batch      = {}
+    local BATCH_SIZE = 5000
+    local function flush_batch()
+        if #batch == 0 then return end
+        execute_in_transaction(SnDdb, function(db)
+            for _, sql in ipairs(batch) do
+                -- Direct exec (no dbcheck): FK violations for unknown zone keys
+                -- are silently skipped so an unrecognized area doesn't abort the
+                -- entire migration.
+                db:exec(sql)
+            end
+        end)
+        batch = {}
+    end
+
+    local sightings_count = 0
+    for _, entry in ipairs(migrateTable) do
+        local room = roomsById[tostring(entry.roomid)]
+        if room then
+            batch[#batch + 1] = string.format(
+                "INSERT OR IGNORE INTO mob_sightings " ..
+                "(mob, room_name, roomid, zone, seen_count) " ..
+                "VALUES (%s, %s, %d, %s, %d)",
+                fixsql(entry.mob), fixsql(room.name),
+                entry.roomid, fixsql(room.area), entry.count
+            )
+            sightings_count = sightings_count + 1
+            if #batch >= BATCH_SIZE then flush_batch() end
+        end
+    end
+    flush_batch()
+    InfoNote("Migrated " .. sightings_count .. " mob sightings.")
+
+    -- ── Step 5: Migrate keyword exceptions → mob_keywords ────────────────────
+    InfoNote("Migrating mob keyword exceptions...")
+    local kw_count = 0
+    for row in PwarDb:nrows("SELECT mobname, areaid, subname FROM mobsubs") do
+        batch[#batch + 1] = string.format(
+            "INSERT OR REPLACE INTO mob_keywords (char_id, zone, mob_name, keyword) " ..
+            "VALUES (NULL, %s, %s, %s)",
+            fixsql(row.areaid), fixsql(row.mobname), fixsql(row.subname)
+        )
+        kw_count = kw_count + 1
+        if #batch >= BATCH_SIZE then flush_batch() end
+    end
+    flush_batch()
+    InfoNote("Migrated " .. kw_count .. " keyword exceptions.")
+
+    -- ── Step 6: Migrate start rooms → areas table ────────────────────────────
+    InfoNote("Migrating area start rooms...")
+    local marks_count = 0
+    execute_in_transaction(SnDdb, function(db)
+        for row in PwarDb:nrows("SELECT areaname, roomid FROM startrooms") do
+            local rid = tonumber(row.roomid)
+            if rid and rid > 0 then
+                -- Ensure the area row exists before updating start_room.
+                db:exec(
+                    "INSERT OR IGNORE INTO areas (key, name, source) VALUES (" ..
+                    fixsql(row.areaname) .. ", " .. fixsql(row.areaname) .. ", 'scrape')"
+                )
+                db:exec(
+                    "UPDATE areas SET start_room=" .. rid ..
+                    " WHERE key=" .. fixsql(row.areaname)
+                )
+                marks_count = marks_count + 1
+            end
+        end
+    end)
+    InfoNote("Migrated " .. marks_count .. " area start rooms.")
+
+    PwarDb:close()
+    db_close(SnDdb)
+
+    -- Rebuild in-memory caches to reflect the newly imported data.
+    if type(build_area_name_xref) == "function" then
+        build_area_name_xref()
+    end
+end
+ --
+
+--[[Mob searching]]
+
+-- Parses and dispatches mob search commands.
+-- Syntax:  ms [<here|areakey>] <mob name> [<level>]
+--
+-- First token is treated as a location qualifier only if it is the literal
+-- word "here" or an exact match for an area key in the database.  Everything
+-- remaining is the mob name pattern.  An optional trailing integer is used as
+-- a level-proximity filter (±LEVEL_WINDOW levels).
+function onSearch(_name, _line, wildcards)
+    local input = (wildcards[1] or ""):match("^%s*(.-)%s*$")
+    if input == "" then
+        InfoNote("  Mob Search — usage:")
+        InfoNote("    ms <mob>               search all areas")
+        InfoNote("    ms here <mob>          search current area")
+        InfoNote("    ms <areakey> <mob>     search a specific area")
+        InfoNote("    ms <mob> <level>       filter by level proximity (\xc2\xb15 levels)")
+        InfoNote("  Examples: ms hawk   ms here hawk   ms galadon hawk 25")
+        return
+    end
+
+    -- Tokenise
+    local tokens = {}
+    for tok in input:gmatch("%S+") do tokens[#tokens+1] = tok end
+
+    -- Trailing integer → level filter (only when there are remaining tokens)
+    local level = nil
+    if #tokens > 1 and tokens[#tokens]:match("^%d+$") then
+        level = tonumber(tokens[#tokens])
+        table.remove(tokens)
+    end
+
+    -- First token → optional location qualifier (only when more tokens remain)
+    local location = nil   -- nil means "all areas"
+    if #tokens > 1 then
+        local first = tokens[1]:lower()
+        if first == "here" then
+            location = (gmcp("room.info.zone") or ""):lower()
+            if location == "" then
+                InfoNote("*** Cannot determine current zone — no GMCP data.")
+                return
+            end
+            table.remove(tokens, 1)
+        else
+            -- Accept only an exact area key to avoid misidentifying mob words.
+            local db = db_open()
+            local matched = nil
+            for row in db:nrows(
+                "SELECT key FROM areas WHERE key = " .. fixsql(first) .. " LIMIT 1"
+            ) do
+                matched = row.key
+            end
+            db_close(db)
+            if matched then
+                location = matched
+                table.remove(tokens, 1)
+            end
+        end
+    end
+
+    local mob_name = table.concat(tokens, " ")
+    if #mob_name < 2 then
+        InfoNote("*** Mob name must be at least 2 characters.")
+        return
+    end
+
+    mobSearch(mob_name, location, level)
+end
+
+-- How many levels above and below the requested level to accept.
+local MS_LEVEL_WINDOW = 5
+
+-- Query mob_sightings + areas (+ optional mob_kills) and display results.
+--   mob_name : plain text, matched with LIKE %pattern%
+--   location : nil (all areas), or an exact area key string
+--   level    : nil, or an integer (area range must overlap level ± MS_LEVEL_WINDOW)
+function mobSearch(mob_name, location, level)
+    -- Build WHERE clauses
+    local wheres = { "ms.mob LIKE " .. fixsql("%" .. mob_name .. "%") }
+    if location then
+        wheres[#wheres+1] = "ms.zone = " .. fixsql(location)
+    end
+    if level then
+        wheres[#wheres+1] = "a.minlvl <= " .. (level + MS_LEVEL_WINDOW)
+        wheres[#wheres+1] = "a.maxlvl >= " .. (level - MS_LEVEL_WINDOW)
+    end
+
+    local sql =
+        "SELECT ms.mob, ms.room_name, ms.roomid, ms.zone, ms.seen_count, " ..
+        "COALESCE(mk.kill_count, 0) AS kills, a.minlvl, a.maxlvl " ..
+        "FROM mob_sightings ms " ..
+        "JOIN areas a ON a.key = ms.zone " ..
+        "LEFT JOIN mob_kills mk ON mk.mob = ms.mob AND mk.roomid = ms.roomid " ..
+        "WHERE " .. table.concat(wheres, " AND ") .. " " ..
+        "ORDER BY " ..
+        -- Tier 0: exact name match (NOCASE collation handles case)
+        "CASE WHEN ms.mob = "    .. fixsql(mob_name)                  .. " THEN 0 " ..
+        -- Tier 1: search term is a whole word at end ("a hawk", "a wounded hawk")
+             "WHEN ms.mob LIKE " .. fixsql("% "  .. mob_name)         .. " THEN 1 " ..
+        -- Tier 2: whole word in middle or at very start ("hawk master")
+             "WHEN ms.mob LIKE " .. fixsql("% "  .. mob_name .. " %") .. " THEN 2 " ..
+             "WHEN ms.mob LIKE " .. fixsql(mob_name .. " %")          .. " THEN 2 " ..
+        -- Tier 3: search term is a prefix starting the name ("hawkmaster" with no article)
+             "WHEN ms.mob LIKE " .. fixsql(mob_name .. "%")           .. " THEN 3 " ..
+        -- Tier 4: search term is a prefix of a word elsewhere ("a hawker", "a hawkdraugr")
+             "WHEN ms.mob LIKE " .. fixsql("% "  .. mob_name .. "%")  .. " THEN 4 " ..
+             "ELSE 5 END ASC, " ..
+        -- Within each tier: shorter name first (closer to exact), then most-killed
+        "LENGTH(ms.mob) ASC, kills DESC, ms.seen_count DESC " ..
+        "LIMIT 50"
+
+    local db = db_open()
+    mshow = {}
+    local results = {}
+    for row in db:nrows(sql) do
+        results[#results+1] = row
+        mshow[#mshow+1] = { row.mob, row.zone, tostring(row.roomid) }
+    end
+    db_close(db)
+
+    -- ── Display constants ────────────────────────────────────────────────────
+    local C_SEP  = "#404040"
+    local C_HDR  = "#909090"
+    local C_TIT  = snd_get_setting("color_ms_title",      "#00D4FF")
+    local C_COL  = snd_get_setting("color_ms_col_header", "#606060")
+    local C_MOB  = snd_get_setting("color_ms_mob",        "#FFFFFF")
+    local C_ROOM = snd_get_setting("color_ms_room",       "#90EE90")
+    local C_ZONE = snd_get_setting("color_ms_zone",       "#FFD700")
+    local C_LVL  = snd_get_setting("color_ms_lvl",        "#FFA07A")
+    local C_KILL = snd_get_setting("color_ms_kills",      "#87CEEB")
+    local C_NONE = "#FF6060"
+    local C_FOOT = "#808080"
+    local BG_ALT = snd_get_setting("color_ms_row_bg",     "#191970")
+    local HR     = string.rep("\xe2\x94\x80", 81)  -- ─ × 81 (matches content width)
+
+    local W_MOB  = 22
+    local W_ROOM = 22
+    local W_ZONE = 10
+    local W_LVL  =  7   -- "80-120"
+    local W_KILL =  5
+
+    -- ── Header ───────────────────────────────────────────────────────────────
+    ColourNote(C_SEP, "", HR)
+    ColourTell(C_HDR, "", "  Mob Search  \xc2\xb7  ")
+    ColourTell(C_TIT, "", '"' .. mob_name .. '"')
+    if location then
+        ColourTell(C_HDR, "", "  in  ")
+        ColourTell(C_ZONE, "", location)
+    else
+        ColourTell(C_HDR, "", "  \xc2\xb7  all areas")
+    end
+    if level then
+        ColourTell(C_HDR, "", "  \xc2\xb7  level ")
+        ColourTell(C_LVL, "", tostring(level) .. " \xc2\xb1" .. MS_LEVEL_WINDOW)
+    end
+    Note("")
+    ColourNote(C_SEP, "", HR)
+
+    if #results == 0 then
+        Note("")
+        ColourNote(C_NONE, "", "  No mobs matching those criteria were found in the database.")
+        ColourNote(C_FOOT, "", "  (Mob data is recorded automatically when you scan rooms.)")
+        Note("")
+        ColourNote(C_SEP, "", HR)
+        return
+    end
+
+    -- ── Column header ────────────────────────────────────────────────────────
+    ColourNote(C_COL, "",
+        string.format("  %3s  %-"..W_MOB.."s  %-"..W_ROOM.."s  %-"..W_ZONE.."s  %-"..W_LVL.."s  %"..W_KILL.."s",
+            "#", "Mob Name", "Room Name", "Zone", "Lvl", "Kills"))
+    ColourNote(C_COL, "",
+        "  " .. string.rep("\xe2\x94\x80", 3) ..
+        "  " .. string.rep("\xe2\x94\x80", W_MOB) ..
+        "  " .. string.rep("\xe2\x94\x80", W_ROOM) ..
+        "  " .. string.rep("\xe2\x94\x80", W_ZONE) ..
+        "  " .. string.rep("\xe2\x94\x80", W_LVL) ..
+        "  " .. string.rep("\xe2\x94\x80", W_KILL))
+
+    -- ── Rows ─────────────────────────────────────────────────────────────────
+    for i, row in ipairs(results) do
+        local bg     = (i % 2 == 0) and BG_ALT or ""
+        local lvl_s  = tostring(row.minlvl) .. "-" .. tostring(row.maxlvl)
+        local mob_s  = ellipsify(row.mob,       W_MOB)
+        local room_s = ellipsify(row.room_name, W_ROOM)
+        local zone_s = ellipsify(row.zone,      W_ZONE)
+
+        local action = "mapper goto " .. tostring(row.roomid)
+        local hint   = "Navigate to " .. row.room_name .. " (" .. tostring(row.roomid) .. ")"
+        Hyperlink(action, string.format("  %3d  ",              i),         hint, C_COL, bg, false, true)
+        Hyperlink(action, string.format("%-"..W_MOB.."s  ",    mob_s),     hint, C_MOB, bg, false, true)
+        Hyperlink(action, string.format("%-"..W_ROOM.."s  ",   room_s),    hint, C_ROOM, bg, false, true)
+        Hyperlink(action, string.format("%-"..W_ZONE.."s  ",   zone_s),    hint, C_ZONE, bg, false, true)
+        Hyperlink(action, string.format("%-"..W_LVL.."s  ",    lvl_s),     hint, C_LVL, bg, false, true)
+        Hyperlink(action, string.format("%"..W_KILL.."d",       row.kills), hint, C_KILL, bg, false, true)
+        Note("")
+    end
+
+    -- ── Footer ───────────────────────────────────────────────────────────────
+    ColourNote(C_SEP, "", HR)
+    local limit_note = (#results == 50) and "  (capped at 50 — narrow your search)" or ""
+    ColourNote(C_FOOT, "",
+        "  " .. #results .. " result" .. (#results == 1 and "" or "s") ..
+        limit_note .. "  \xc2\xb7  xmg <#> to navigate  \xc2\xb7  click any row to go directly")
+    ColourNote(C_SEP, "", HR)
+end
+
+function mobGo(_name, _line, args)
+    local idx = tonumber(args[1])
+    if not idx or not mshow[idx] then
+        InfoNote("*** xmg: invalid result number. Run a mob search first, then xmg <#>.")
+        return
+    end
+    Execute("mapper goto " .. mshow[idx][3])
+end
+
+function xset_nx_check()
+    InfoNote("xset nx is set to ", xset_nx_action)
+    print_xset_nx_desc()
+end
+function print_xset_nx_desc()
+    if xset_nx_action == "smartscan" then
+        InfoNote(
+            "You will ",
+            "scan",
+            " every room upon arrival after nx or go, filtering down to just campaign, gquest, and quest targets. If you encounter potential noscan mobs, follow up with a filtered ",
+            "consider",
+            " to check if they are here.\n"
+        )
+    elseif xset_nx_action == "con" then
+        InfoNote("You will ", "consider", " every room upon arrival after nx or go.\n")
+    elseif xset_nx_action == "scan" then
+        InfoNote("You will ", "scan", " surrounding rooms upon arrival after nx or go.\n")
+    elseif xset_nx_action == "scanhere" then
+        InfoNote("You will ", "scan the current room", " upon arrival after nx or go.\n")
+    elseif xset_nx_action == "qs" then
+        InfoNote(
+            "You will ",
+            "quick scan",
+            " every room upon arrival after nx or go, looking only for your target mob.\n"
+        )
+    else
+        InfoNote("You will take no action upon arrival after nx or go.\n")
+    end
+end
+
+function consider_unkillable(name, line, wildcards, style)
+    EnableTrigger("consider_end", true)
+
+    local mob_name = Trim(wildcards.name)
+    if mob_name == "" then return end
+
+    -- Persist sighting even for unkillable mobs.
+    write_mob_list_to_db({ mob_name:lower() })
+
+    -- Check activity membership (sets activity_target_found_here side-effect).
+    local tags = mob_activity_tags(mob_name, true)
+
+    -- In smart noscan mode only report activity mobs.  Must go through the
+    -- accessor: con_after_scan is a local inside scanning.lua and is simply
+    -- nil from this chunk, so testing it directly never filtered anything.
+    if con_smart_filter_active() and #tags == 0 then return end
+
+    -- Print: [TAGS] mob_name   <unkillable marker>
+    local tag_len = 0
+    for _, tag in ipairs(tags) do
+        ColourTell(tag.colour, "", tag.text)
+        tag_len = tag_len + #tag.text
+    end
+    local pad = string.rep(" ", math.max(0, 5 - tag_len))
+    ColourTell("silver", "", pad .. mob_name)
+    NoteStyle(1)
+    if name == "consider_shopkeeper" then
+        ColourNote("gold", "", "  (shopkeeper)")
+    else
+        ColourNote("white", "", "  (divine protection)")
+    end
+end
+
+function xset_maze()
+    local roomId = tonumber(current_room.rmid)
+    if not roomId or roomId <= 0 then
+        InfoNote("Current room: ", tostring(current_room.rmid), " is invalid.")
+        return
+    end
+    local zone = current_room.arid or ""
+    if is_maze_room(roomId) then
+        maze_room_delete(roomId)
+        InfoNote("Maze start flag ", "REMOVED", " from room: ", tostring(roomId))
+    else
+        maze_room_add(roomId, zone)
+        InfoNote("Maze start flag ", "ADDED", " to room: ", tostring(roomId),
+                 " (", zone, ")")
+    end
+end
+
+function xset_maze_list()
+    local rooms = maze_room_list()
+    if #rooms == 0 then
+        InfoNote("No maze start rooms registered.")
+        return
+    end
+    InfoNote(string.format("  %-10s  %-10s  %s", "Room ID", "Zone", "Area Name"))
+    InfoNote("  " .. string.rep("-", 56))
+    for _, r in ipairs(rooms) do
+        InfoNote(string.format("  %-10d  %-10s  %s",
+            r.roomid, r.zone, r.area_name))
+    end
+end
+
+function xset_maze_delete(name, line, wildcards)
+    local roomid = tonumber(wildcards["roomid"])
+    if not roomid then
+        InfoNote("Usage: xset maze del <roomid>")
+        return
+    end
+    if not is_maze_room(roomid) then
+        InfoNote("Room " .. tostring(roomid) .. " is not registered as a maze room.")
+        return
+    end
+    maze_room_delete(roomid)
+    InfoNote("Maze room ", tostring(roomid), " removed.")
+end
+
+-- ─── Area management handlers ─────────────────────────────────────────────────
+
+function xset_area_list()
+    local rows = area_list_custom()
+    local HDR_COL  = RGBColourToName(0x00B4E0)
+    local SEP_COL  = RGBColourToName(0x1A3A50)
+    local KEY_COL  = RGBColourToName(0x88CCEE)
+    local LVL_COL  = RGBColourToName(0x87CEFA)
+    local SRT_COL  = RGBColourToName(0x44CC44)
+    local NONE_COL = RGBColourToName(0xFF6666)
+    local NAME_COL = RGBColourToName(0xE0E0E0)
+    local DIM_COL  = RGBColourToName(0x506070)
+    -- Difficulty colours: 1=default/dim, 2=green, 3=yellow, 4=orange, 5=red
+    local DIFF_COLS = {
+        RGBColourToName(0x506070),
+        RGBColourToName(0x44CC44),
+        RGBColourToName(0xFFCC00),
+        RGBColourToName(0xFF8800),
+        RGBColourToName(0xFF3333),
+    }
+    local BAR = string.rep("-", 78)
+    if #rows == 0 then
+        ColourNote(HDR_COL, "", "  No custom (non-JSON) areas found.")
+        return
+    end
+    ColourNote(SEP_COL,  "", "  " .. BAR)
+    ColourTell(HDR_COL,  "", string.format("  %-14s  %-9s  %-6s  %-10s  %-4s  %s",
+        "Key", "Levels", "Lock", "Start", "Diff", "Name"))
+    print("")
+    ColourNote(SEP_COL,  "", "  " .. BAR)
+    for _, r in ipairs(rows) do
+        local lvl   = tostring(r.minlvl) .. "-" .. tostring(r.maxlvl)
+        local start = r.start_room and tostring(r.start_room) or nil
+        local diff  = r.difficulty or 1
+        local dcol  = DIFF_COLS[diff] or DIFF_COLS[1]
+        ColourTell(KEY_COL,  "", string.format("  %-14s  ", r.key))
+        ColourTell(LVL_COL,  "", string.format("%-9s  ", lvl))
+        ColourTell(DIM_COL,  "", string.format("%-6d  ", r.lock))
+        if start then
+            ColourTell(SRT_COL,  "", string.format("%-10s  ", start))
+        else
+            ColourTell(NONE_COL, "", string.format("%-10s  ", "none"))
+        end
+        ColourTell(dcol,     "", string.format("%-4d  ", diff))
+        ColourNote(NAME_COL, "", r.name)
+    end
+    ColourNote(SEP_COL, "", "  " .. BAR)
+    ColourNote(DIM_COL, "", string.format("  %d area(s)", #rows))
+end
+
+function xset_area_list_unset()
+    local rows = area_list_no_start()
+    local HDR_COL    = RGBColourToName(0x00B4E0)
+    local SEP_COL    = RGBColourToName(0x1A3A50)
+    local SCRAPE_COL = RGBColourToName(0x88CCEE)
+    local STUB_COL   = RGBColourToName(0xFF8C00)
+    local OTHER_COL  = RGBColourToName(0x888888)
+    local NAME_COL   = RGBColourToName(0xE0E0E0)
+    local HINT_COL   = RGBColourToName(0x506070)
+    local BAR        = string.rep("-", 64)
+    if #rows == 0 then
+        ColourNote(HDR_COL, "", "  All areas have a defined start room.")
+        return
+    end
+    ColourNote(SEP_COL,  "", "  " .. BAR)
+    ColourTell(HDR_COL,  "", string.format("  %-14s  %-9s  %-8s  %s", "Key", "Levels", "Source", "Name"))
+    print("")
+    ColourNote(SEP_COL,  "", "  " .. BAR)
+    for _, r in ipairs(rows) do
+        local lvl  = tostring(r.minlvl) .. "-" .. tostring(r.maxlvl)
+        local src  = r.source or "?"
+        local scol = src == "scrape" and SCRAPE_COL
+                  or src == "stub"   and STUB_COL
+                  or OTHER_COL
+        ColourTell(HDR_COL,  "", string.format("  %-14s  %-9s  ", r.key, lvl))
+        ColourTell(scol,     "", string.format("%-8s  ", src))
+        ColourNote(NAME_COL, "", r.name)
+    end
+    ColourNote(SEP_COL,  "", "  " .. BAR)
+    ColourNote(HINT_COL, "",
+        string.format("  %d area(s) missing start room -- visit entry point, then: xset mark", #rows))
+end
+
+function xset_area_delete(name, line, wildcards)
+    local key = wildcards["key"]
+    if not key or key == "" then
+        InfoNote("Usage: xset area del <key>")
+        return
+    end
+    if area_delete(key) then
+        InfoNote("Area '", key, "' deleted.")
+    end
+end
+
+function xset_area_edit_start(name, line, wildcards)
+    local key    = wildcards["key"]
+    local roomid = wildcards["roomid"]
+    if area_edit(key, "start_room", roomid) then
+        InfoNote("Area '", key, "' start room set to ", tostring(roomid), ".")
+    end
+end
+
+function xset_area_edit_min(name, line, wildcards)
+    local key   = wildcards["key"]
+    local level = wildcards["level"]
+    if area_edit(key, "minlvl", level) then
+        InfoNote("Area '", key, "' min level set to ", tostring(level), ".")
+    end
+end
+
+function xset_area_edit_max(name, line, wildcards)
+    local key   = wildcards["key"]
+    local level = wildcards["level"]
+    if area_edit(key, "maxlvl", level) then
+        InfoNote("Area '", key, "' max level set to ", tostring(level), ".")
+    end
+end
+
+function xset_area_edit_lock(name, line, wildcards)
+    local key  = wildcards["key"]
+    local lock = wildcards["lock"]
+    if area_edit(key, "lock", lock) then
+        InfoNote("Area '", key, "' lock level set to ", tostring(lock), ".")
+    end
+end
+
+function xset_area_edit_noquest(name, line, wildcards)
+    local key = wildcards["key"]
+    local val = (wildcards["val"] or ""):lower()
+    local n   = (val == "on" or val == "1" or val == "true") and 1 or 0
+    if area_edit(key, "noquest", n) then
+        InfoNote("Area '", key, "' noquest flag set to ", n == 1 and "ON" or "OFF", ".")
+    end
+end
+
+function xset_area_edit_vidblain(name, line, wildcards)
+    local key = wildcards["key"]
+    local val = (wildcards["val"] or ""):lower()
+    local n   = (val == "on" or val == "1" or val == "true") and 1 or 0
+    if area_edit(key, "vidblain", n) then
+        InfoNote("Area '", key, "' vidblain flag set to ", n == 1 and "ON" or "OFF", ".")
+    end
+end
+
+function xset_area_edit_name(alias_name, line, wildcards)
+    local key  = wildcards["key"]
+    local name = wildcards["aname"]
+    if area_edit(key, "name", name) then
+        InfoNote("Area '", key, "' name set to '", tostring(name), "'.")
+    end
+end
+
+function xset_area_edit_difficulty(name, line, wildcards)
+    local key = wildcards["key"]
+    local n   = tonumber(wildcards["diff"])
+    if not n or n < 1 or n > 5 then
+        ErrorNote("SnD: difficulty must be 1-5.")
+        return
+    end
+    if area_edit(key, "difficulty", n) then
+        InfoNote("Area '", key, "' difficulty set to ", tostring(math.floor(n)), "/5.")
+    end
+end
+
+-- ─── Mob flag handlers ────────────────────────────────────────────────────────
+
+function xset_mob_nowhere(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local mob  = Trim(w["mob"] or "")
+    local zone = current_room.arid or ""
+    if mob == "" then
+        InfoNote("Usage: xset mob nowhere <mob name>")
+        return
+    end
+    local on = mob_toggle_tag(mob, zone, "nowhere")
+    InfoNote("Mob '", mob, "' nowhere flag: ", on and "ON" or "OFF",
+             " (zone: ", zone, ")")
+end
+
+function xset_mob_nohunt(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local mob  = Trim(w["mob"] or "")
+    local zone = current_room.arid or ""
+    if mob == "" then
+        InfoNote("Usage: xset mob nohunt <mob name>")
+        return
+    end
+    local on = mob_toggle_tag(mob, zone, "nohunt")
+    InfoNote("Mob '", mob, "' nohunt flag: ", on and "ON" or "OFF",
+             " (zone: ", zone, ")")
+end
+
+function xset_mob_noscan(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local mob  = Trim(w["mob"] or "")
+    local zone = current_room.arid or ""
+    if mob == "" then
+        InfoNote("Usage: xset mob noscan <mob name>")
+        return
+    end
+    local on = mob_toggle_tag(mob, zone, "noscan")
+    InfoNote("Mob '", mob, "' noscan flag: ", on and "ON" or "OFF",
+             " (zone: ", zone, ")")
+    if on then
+        InfoNote("This mob does not appear in scan output — S&D will skip scan for it.")
+    end
+end
+
+function xset_mob_levelok(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local mob  = Trim(w["mob"] or "")
+    local zone = current_room.arid or ""
+    if mob == "" then
+        InfoNote("Usage: xset mob levelok <mob name>")
+        return
+    end
+    local on = mob_toggle_tag(mob, zone, "levelok")
+    InfoNote("Mob '", mob, "' levelok flag: ", on and "ON" or "OFF",
+             " (zone: ", zone, ")")
+    if on then
+        InfoNote("This mob is outside the zone's normal level range — room-name CPs will still look for it here.")
+    end
+end
+
+-- Alias handler: 'xset mob difficulty [0-5] [mob]'
+--
+-- Rates how hard a mob is to GET TO on the same 1-5 scale as an area --
+-- the player's own assessment of the chore involved in reaching it, not a
+-- measure of how dangerous it is in a fight. Defaults to whatever you are
+-- currently targeting. 0 clears the rating so the mob goes back to inheriting
+-- its area's.
+--
+-- An area's routing difficulty is the average of its targets' ratings, floored
+-- at the area's own rating, so rating a mob pulls its area upward in proportion
+-- to how much of the area that mob represents. Within the area, harder-to-reach
+-- mobs sort later, so the quick ones are picked up first.
+--
+--   xset mob difficulty          -- show the current target's rating
+--   xset mob difficulty 4        -- rate the current target 4
+--   xset mob difficulty 4 a orc  -- rate a named mob
+--   xset mob difficulty 0        -- clear the current target's rating
+function xset_mob_difficulty(name, line, wildcards)
+    local w    = (type(wildcards) == "table" and wildcards) or {}
+    local args = Trim(w["args"] or "")
+    local zone = current_room.arid or ""
+
+    -- Bare form: report the current target's rating.
+    if args == "" then
+        if not current_target or not current_target.name then
+            InfoNote("SnD: No current target. Usage:")
+            InfoNote("  xset mob difficulty <0-5> [mob name]   (0 clears)")
+            return
+        end
+        local cur = mob_get_difficulty(current_target.name, zone)
+        if cur > 0 then
+            InfoNote("SnD: '", current_target.name, "' is rated difficulty ", cur,
+                     " (zone: ", zone, ").")
+        else
+            InfoNote("SnD: '", current_target.name,
+                     "' has no difficulty rating; it uses its area's (zone: ", zone, ").")
+        end
+        return
+    end
+
+    -- Otherwise the first token is the rating and the rest, if any, is the mob.
+    local rating, rest = args:match("^(%S+)%s*(.*)$")
+    local n = tonumber(rating)
+    if not n then
+        InfoNote("SnD: Usage: xset mob difficulty <0-5> [mob name]   (0 clears)")
+        return
+    end
+
+    local mob = Trim(rest or "")
+    if mob == "" then
+        if not current_target or not current_target.name then
+            InfoNote("SnD: No current target — name the mob explicitly:")
+            InfoNote("  xset mob difficulty ", rating, " <mob name>")
+            return
+        end
+        mob = current_target.name
+    end
+
+    if not mob_set_difficulty(mob, zone, n) then return end
+
+    if math.floor(n) == 0 then
+        InfoNote("SnD: Cleared difficulty for '", mob, "' (zone: ", zone,
+                 "); it now uses its area's rating.")
+    else
+        InfoNote("SnD: '", mob, "' rated difficulty ", math.floor(n),
+                 " (zone: ", zone, ").")
+        InfoNote("SnD: Its area's routing difficulty now averages this in, ",
+                 "and it sorts after easier-to-reach mobs there.")
+    end
+    if type(build_main_target_list) == "function" then build_main_target_list() end
+end
+
+function xset_mob_noaction(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local mob  = Trim(w["mob"] or "")
+    local zone = current_room.arid or ""
+    if mob == "" then
+        InfoNote("Usage: xset mob noaction <mob name>")
+        return
+    end
+    -- If all three are already on, turn them all off; otherwise turn all on.
+    local all_on = mob_has_tag(mob, zone, "nowhere")
+               and mob_has_tag(mob, zone, "nohunt")
+               and mob_has_tag(mob, zone, "noscan")
+    local on = not all_on
+    mob_set_tags(mob, zone, { nowhere = on, nohunt = on, noscan = on })
+    InfoNote("Mob '", mob, "' noaction (nowhere + nohunt + noscan): ", on and "ON" or "OFF",
+             " (zone: ", zone, ")")
+end
+
+-- ─── MOBDEATHS CAPTURE ───────────────────────────────────────────────────────
+-- xmobdeaths sends 'mobdeaths here' and parses the fixed-width output table.
+-- Each row is:   N - mob_name(39 chars)   level(5)   area_name(20)   killed
+-- Results are stored in mob_duplicates via mob_duplicates_set().
+
+-- Globals (not locals) so MUSHclient can reliably access them across trigger calls.
+_mobdeaths_arid = nil   -- zone key captured at command time
+_mobdeaths_rows = {}    -- accumulated {mob, level} rows
+
+function xmobdeaths_cmd()
+    _mobdeaths_arid = (current_room and current_room.arid) or gmcp("room.info.zone") or ""
+    if _mobdeaths_arid == "" then
+        InfoNote("SnD: xmobdeaths — not in a known area (no GMCP room data).")
+        return
+    end
+    _mobdeaths_rows = {}
+    -- Enable the capture group before sending so output is captured immediately.
+    EnableTrigger("trg_mobdeaths_line", true)
+    EnableTrigger("trg_mobdeaths_end",  true)
+    Send("mobdeaths here")
+    InfoNote("SnD: xmobdeaths — capturing output for " .. _mobdeaths_arid .. "...")
+end
+
+function mobdeaths_trigger_start()
+    -- Header line matched.  Reset rows in case this fires from a manual
+    -- 'mobdeaths here' run while the capture group is already active.
+    _mobdeaths_rows = {}
+    EnableTrigger("trg_mobdeaths_line", true)
+    EnableTrigger("trg_mobdeaths_end",  true)
+end
+
+function mobdeaths_trigger_line(name, line)
+    -- Format: "  N - <mob name padded to 39 chars>  <level>  <area>  <killed>"
+    -- Strip rank prefix: optional whitespace + digits + " - "
+    local rest = line:match("^%s*%d+ %- (.*)$")
+    if not rest then return end
+    -- Mob name occupies a fixed 39-char left-justified field.
+    local mob_raw = rest:sub(1, 39)
+    local after   = rest:sub(40)
+    -- Level: first integer in the remainder column.
+    local level = tonumber(after:match("^%s*(%d+)"))
+    -- Trim trailing spaces from mob name.
+    local mob = mob_raw:match("^(.-)%s*$")
+    if mob and mob ~= "" and level then
+        _mobdeaths_rows[#_mobdeaths_rows + 1] = { mob = mob, level = level }
+    end
+end
+
+function mobdeaths_trigger_end()
+    EnableTrigger("trg_mobdeaths_line", false)
+    EnableTrigger("trg_mobdeaths_end",  false)
+    if not _mobdeaths_arid or _mobdeaths_arid == "" then
+        InfoNote("SnD: xmobdeaths — no area captured; results discarded.")
+        return
+    end
+    if #_mobdeaths_rows == 0 then
+        InfoNote("SnD: xmobdeaths — no mob rows parsed (trigger may not have matched lines).")
+        return
+    end
+    -- Group rows by mob name.
+    -- count = number of distinct rows sharing this name = number of distinct
+    --         level variants of this mob in the area (used for ambiguity detection).
+    -- levels = sorted list of unique observed levels.
+    local by_mob = {}
+    for _, r in ipairs(_mobdeaths_rows) do
+        local key = r.mob:lower()
+        if not by_mob[key] then
+            by_mob[key] = { mob = r.mob, count = 0, levels = {} }
+        end
+        by_mob[key].count = by_mob[key].count + 1
+        local lstr = tostring(r.level)
+        local found = false
+        for _, lv in ipairs(by_mob[key].levels) do
+            if lv == lstr then found = true; break end
+        end
+        if not found then
+            by_mob[key].levels[#by_mob[key].levels + 1] = lstr
+        end
+    end
+    -- Write to mob_duplicates.
+    local stored = 0
+    for _, data in pairs(by_mob) do
+        table.sort(data.levels, function(a, b) return tonumber(a) < tonumber(b) end)
+        mob_duplicates_set(data.mob, _mobdeaths_arid, data.count, data.levels)
+        stored = stored + 1
+    end
+    InfoNote(string.format("SnD: xmobdeaths — stored %d mob name(s) for %s.", stored, _mobdeaths_arid))
+    _mobdeaths_rows = {}
+    _mobdeaths_arid = nil
+end
+
+function xset_mob_express(name, line, wildcards)
+    local w    = (type(wildcards) == "table" and wildcards) or {}
+    local args = Trim(w["args"] or "")
+    local mob, zone
+
+    if args == "" then
+        if not current_target or not current_target.name then
+            InfoNote("SnD: No current target. Usage:")
+            InfoNote("  xset mob express <mob> <here|roomid>")
+            return
+        end
+        mob  = current_target.name
+        zone = current_room.arid or ""
+    else
+        -- Split on last whitespace token to separate optional room arg.
+        local mob_part, room_part = args:match("^(.+)%s+(%S+)$")
+        if mob_part and room_part then
+            mob = mob_part
+            if room_part:lower() == "here" then
+                zone = current_room.arid or ""
+            else
+                local roomid = tonumber(room_part)
+                if not roomid then
+                    InfoNote("SnD: Invalid room ID '", room_part, "'. Use a number or 'here'.")
+                    return
+                end
+                -- Look up zone from SnD DB.
+                zone = nil
+                local db = db_open()
+                pcall(function()
+                    for row in db:nrows(
+                        "SELECT zone FROM mob_sightings WHERE roomid=" .. roomid .. " LIMIT 1"
+                    ) do
+                        zone = row.zone
+                    end
+                    if not zone then
+                        for row in db:nrows(
+                            "SELECT zone FROM mob_kills WHERE roomid=" .. roomid .. " LIMIT 1"
+                        ) do
+                            zone = row.zone
+                        end
+                    end
+                end)
+                db_close(db)
+                if not zone then
+                    InfoNote("SnD: No zone found for room ", tostring(roomid), " in the SnD database.")
+                    InfoNote("Scan that room first, or use 'here' for the current room.")
+                    return
+                end
+            end
+        else
+            -- Mob name only — use current zone.
+            mob  = args
+            zone = current_room.arid or ""
+        end
+    end
+
+    if zone == "" then
+        InfoNote("SnD: Not in a known area (no GMCP zone data).")
+        return
+    end
+
+    local on = mob_toggle_tag(mob, zone, "express")
+    InfoNote("Mob '", mob, "' express flag: ", on and "ON" or "OFF",
+             " (zone: ", zone, ")")
+    if on then
+        InfoNote("This mob will always use express navigation regardless of kill count.")
+    end
+end
+
+function xset_mob_priority(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local mob    = Trim(w["mob"] or "")
+    local zone   = current_room.arid or ""
+    local roomId = tonumber(current_room.rmid)
+    if mob == "" then
+        InfoNote("Usage: xset mob priority <mob name>")
+        return
+    end
+    if not roomId or roomId <= 0 then
+        InfoNote("Current room is invalid.")
+        return
+    end
+    mob_set_priority_room(mob, zone, roomId)
+    InfoNote("Priority room for '", mob, "' in '", zone,
+             "' set to room ", tostring(roomId), ".")
+end
+
+function xset_mob_unpriority(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local mob  = Trim(w["mob"] or "")
+    local zone = current_room.arid or ""
+    if mob == "" then
+        InfoNote("Usage: xset mob unpriority <mob name>")
+        return
+    end
+    mob_set_priority_room(mob, zone, nil)
+    InfoNote("Priority room for '", mob, "' in '", zone, "' cleared.")
+end
+
+function xset_mob_tags(name, line, wildcards)
+    local w    = (type(wildcards) == "table" and wildcards) or {}
+    local zone = Trim(w["zone"] or "")
+    if zone == "" then
+        zone = current_room.arid or ""
+    end
+    if zone == "" then
+        InfoNote("Usage: xset mob tags [<zone key>]")
+        return
+    end
+    local rows = mob_list_tags(zone)
+    if #rows == 0 then
+        InfoNote("No mob flags set for zone '", zone, "'.")
+        return
+    end
+    InfoNote(string.format("  %-30s  %-7s  %-7s  %-7s  %-7s  %-7s  %-4s  %s",
+        "Mob", "Nowhere", "NoHunt", "NoScan", "Express", "LevelOK", "Diff", "Priority Room"))
+    InfoNote("  " .. string.rep("-", 97))
+    for _, r in ipairs(rows) do
+        InfoNote(string.format("  %-30s  %-7s  %-7s  %-7s  %-7s  %-7s  %-4s  %s",
+            r.mob,
+            r.nowhere  and "yes" or "-",
+            r.nohunt   and "yes" or "-",
+            r.noscan   and "yes" or "-",
+            r.express  and "yes" or "-",
+            r.levelok  and "yes" or "-",
+            (r.difficulty and r.difficulty > 0) and tostring(r.difficulty) or "-",
+            r.priority_room and tostring(r.priority_room) or "-"))
+    end
+end
+
+function xset_mob_clearflags(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local mob  = Trim(w["mob"] or "")
+    local zone = current_room.arid or ""
+    if mob == "" then
+        InfoNote("Usage: xset mob clearflags <mob name>")
+        return
+    end
+    mob_clear_tags(mob, zone)
+    -- This drops the whole mob_tags row, so the difficulty rating goes with
+    -- the flags. Say so rather than let a rating vanish silently.
+    InfoNote("All flags cleared for '", mob, "' in zone '", zone,
+             "', including any difficulty rating.")
+end
+
+function xset_table_notes()
+    if table_notes == "on" then
+        table_notes = "off"
+        InfoNote("Room notes will no longer be shown directly in the tables")
+    else
+        table_notes = "on"
+        InfoNote("Room notes will be shown directly in the tables")
+    end
+    snd_set_setting("table_notes", table_notes, true)
+end
+
+function show_notes_in_table()
+    return table_notes == "on"
+end
+
+function xset_table_width(name, line, wildcards)
+    local width = tonumber(wildcards.width) or 80
+    table_width = math.min(150, math.max(80, width))
+    InfoNote("Set table width to ", table_width)
+    snd_set_setting("table_width", tostring(table_width), true)
+end
+
+function trigger_receive_xp()
+    if last_mob_damaged then
+        DebugNote(
+            "I suspect you just killed ",
+            last_mob_damaged,
+            " in room ",
+            current_room.rmid,
+            " (",
+            current_room.arid,
+            ")"
+        )
+        last_mob_killed = last_mob_damaged
+    else
+        DebugNote("****** ", "I don't know which mob you just killed", " ******")
+    end
+    last_mob_damaged = nil
+end
+
+function trigger_damage_done(name, line, wildcards)
+    last_mob_damaged = Trim(wildcards.mob_name)
+end
+function check_state_changed()
+    if state_changed then
+        state_changed = false
+        SaveState()
+        DebugNote("State changed. Saving plugin state file.")
+    end
+end
+
+
+-- ─── BOOTSTRAP ────────────────────────────────────────────────────────────────
+-- Handles module discovery, async download on first install, smart update.
+--
+-- Load priority (dev path takes precedence so source checkout is live):
+--   1. {plugin_dir}lua/<file>   (dev / source checkout)
+--   2. {plugins_folder}snd_modules/<file>  (production download)
+--
+-- On first install, any file missing from snd_modules/ is downloaded from
+-- BASE_URL. seed_data.lua is also downloaded once, run, then deleted.
+--
+-- Smart update (snd update): downloads manifest.json, compares remote hashes
+-- to stored download-time hashes, and 3-way merges user-modified files so
+-- local edits survive the update (see the SMART UPDATE section below).
+
+-- ─── PATHS & CONSTANTS ────────────────────────────────────────────────────────
+
+-- Production module folder (created on first download).
+local _snd_prod_base = GetInfo(60) .. "snd_modules/"
+-- Dev override: lua/ folder next to the XML file.
+local _snd_dev_base  = GetPluginInfo(GetPluginID(), 20) .. "lua/"
+-- Remote module source is derived from SND_RAW_URL in the preamble above, so
+-- there is exactly one place to edit when the repository moves.
+
+-- Full module list in dependency order.
+local _snd_modules = {
+    "constants.lua",
+    "util.lua",
+    "db.lua",
+    "settings.lua",
+    "characters.lua",
+    "areas.lua",
+    "mobs.lua",
+    "keywords.lua",
+    "targets.lua",
+    "pathing.lua",
+    "express.lua",
+    "navigation.lua",
+    "hunting.lua",
+    "scanning.lua",
+    "history.lua",
+    "window.lua",
+    "settings_popup.lua",
+    "help.lua",
+    "changelog.lua",
+}
+
+-- ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+local function _snd_file_exists(path)
+    local f = io.open(path, "r")
+    if f then f:close() return true end
+    return false
+end
+
+-- Resolve the path to use for a module filename.
+-- Dev path wins over prod path; returns nil if neither exists.
+local function _snd_resolve(filename)
+    local dev = _snd_dev_base  .. filename
+    local prd = _snd_prod_base .. filename
+    if _snd_file_exists(dev) then return dev end
+    if _snd_file_exists(prd) then return prd end
+    return nil
+end
+
+-- FNV-1a 32-bit hash (Lua 5.1 compatible, uses bit library).
+local function _snd_fnv1a(s)
+    local hash = 2166136261
+    for i = 1, #s do
+        hash = bit.bxor(hash, string.byte(s, i))
+        hash = (hash * 16777619) % 4294967296
+    end
+    return string.format("%08x", hash)
+end
+
+-- Read a file and return its content, or nil on error.
+local function _snd_read_file(path)
+    local f = io.open(path, "rb")
+    if not f then return nil end
+    local content = f:read("*a")
+    f:close()
+    return content
+end
+
+-- Write content to path. Returns false if the file cannot be opened.
+local function _snd_write_file(path, content)
+    local f = io.open(path, "wb")
+    if not f then return false end
+    f:write(content)
+    f:close()
+    return true
+end
+
+-- Ensure snd_modules/ directory exists.
+local function _snd_ensure_dir()
+    if lfs and lfs.attributes(_snd_prod_base, "mode") ~= "directory" then
+        lfs.mkdir(_snd_prod_base)
+    end
+end
+
+-- ─── LOAD ALL MODULES ─────────────────────────────────────────────────────────
+
+-- dofile each module in order. Skips modules that cannot be found
+-- (should only happen during a partial download failure).
+local function _snd_load_modules()
+    for _, filename in ipairs(_snd_modules) do
+        local path = _snd_resolve(filename)
+        if path then
+            local ok, err = pcall(dofile, path)
+            if not ok then
+                ColourNote("white", "red", "SnD: Error loading " .. filename .. ": " .. tostring(err))
+            end
+        else
+            ColourNote("white", "darkred", "SnD: Module not found: " .. filename)
+        end
+    end
+end
+
+-- Warn when modules are being served from the plugin's own lua/ folder.
+--
+-- That folder is the "dev path": _snd_resolve prefers it, and the updater
+-- deliberately never touches anything found there, so a developer's working
+-- copy is not clobbered. The catch is that a user who downloads the whole
+-- repository as a zip and extracts it into their plugins folder gets exactly
+-- the same layout -- and then every module is pinned forever while the plugin
+-- XML keeps updating normally, leaving a new XML beside stale modules. That
+-- used to happen in complete silence.
+--
+-- A developer opts out by creating an empty file named ".dev" in that folder.
+-- The marker is deliberately NOT in the repository: if it shipped, the source
+-- zip would carry it and suppress the very warning it exists to allow.
+local function _snd_warn_if_dev_path()
+    local using_dev = false
+    for _, fname in ipairs(_snd_modules) do
+        if _snd_file_exists(_snd_dev_base .. fname) then
+            using_dev = true
+            break
+        end
+    end
+    if not using_dev then return end
+    if _snd_file_exists(_snd_dev_base .. ".dev") then return end
+
+    ColourNote("white", "darkred",
+        "SnD: modules are loading from " .. _snd_dev_base)
+    ColourNote("white", "darkred",
+        "SnD: files there are treated as a developer copy -- 'snd update' " ..
+        "will never replace them,")
+    ColourNote("white", "darkred",
+        "SnD: so you would keep old modules while the plugin itself updates.")
+    ColourNote("silver", "",
+        "SnD: If you extracted the whole repository, delete that lua folder " ..
+        "and reload. The")
+    ColourNote("silver", "",
+        "SnD: plugin downloads its own modules. If this is intentional, " ..
+        "create an empty")
+    ColourNote("silver", "",
+        "SnD: file named .dev inside it to silence this.")
+end
+
+-- ─── SEED DATA ────────────────────────────────────────────────────────────────
+
+-- Run seed_data.lua once after modules have loaded.
+-- The file is expected at snd_modules/seed_data.lua (downloaded by bootstrap).
+-- It self-deletes after successful seeding.
+local function _snd_run_seed()
+    local seed_path = _snd_prod_base .. "seed_data.lua"
+    if not _snd_file_exists(seed_path) then return end
+    -- Expose path so seed_data.lua can delete itself.
+    _snd_seed_path = seed_path
+    local ok, err = pcall(dofile, seed_path)
+    if not ok then
+        ColourNote("white", "red", "SnD: seed_data.lua error: " .. tostring(err))
+    end
+    _snd_seed_path = nil
+end
+
+-- ─── BOOTSTRAP (FIRST INSTALL) ────────────────────────────────────────────────
+
+-- Called by OnPluginInstall.
+-- If all modules are already present (dev or prod), loads them synchronously
+-- and calls on_complete immediately.
+-- If any are missing from prod (and no dev override), downloads them async
+-- then loads and calls on_complete.
+function _snd_bootstrap(on_complete)
+    -- Skip dofiles if the script-block eager load already covered everything.
+    if _snd_modules_loaded then
+        _snd_run_seed()
+        on_complete()
+        return
+    end
+
+    _snd_ensure_dir()
+
+    -- Determine which files need downloading (missing from both dev and prod).
+    local needed = {}
+    for _, filename in ipairs(_snd_modules) do
+        if not _snd_resolve(filename) then
+            needed[#needed + 1] = filename
+        end
+    end
+
+    -- Also check seed_data.lua.
+    local need_seed = not _snd_file_exists(_snd_prod_base .. "seed_data.lua")
+    if need_seed then
+        needed[#needed + 1] = "seed_data.lua"
+    end
+
+    if #needed == 0 then
+        -- All present — load synchronously.
+        _snd_load_modules()
+        _snd_run_seed()
+        on_complete()
+        return
+    end
+
+    -- Need downloads. Require async library.
+    local async_ok
+    async_ok, async = pcall(require, "async")
+    if not async_ok then
+        ColourNote("white", "red",
+            "SnD: 'async' library not available. Cannot download modules.")
+        ColourNote("white", "red",
+            "SnD: Place module .lua files in: " .. _snd_prod_base)
+        return
+    end
+
+    ColourNote("silver", "", "SnD: First install — downloading " .. #needed .. " file(s)...")
+
+    local completed = 0
+    local failed    = {}
+
+    for _, filename in ipairs(needed) do
+        local fname = filename  -- capture for closure
+        local url   = snd_raw_url("lua/" .. fname)
+        async.doAsyncRemoteRequest(url, function(retval, page, status)
+            completed = completed + 1
+            if status == 200 and page and #page > 0 then
+                if _snd_write_file(_snd_prod_base .. fname, page) then
+                    -- Store baseline .orig for future merge tracking.
+                    _snd_write_file(_snd_prod_base .. fname .. ".orig", page)
+                    SetVariable("_snd_dlhash_" .. fname, _snd_fnv1a(page))
+                else
+                    failed[#failed + 1] = fname .. " (write error)"
+                end
+            else
+                failed[#failed + 1] = fname .. " (HTTP " .. tostring(status) .. ")"
+            end
+
+            if completed == #needed then
+                if #failed > 0 then
+                    ColourNote("white", "red",
+                        "SnD: Failed to download: " .. table.concat(failed, ", "))
+                    ColourNote("white", "red",
+                        "SnD: Reload the plugin or check your connection.")
+                    return
+                end
+                ColourNote("silver", "", "SnD: Download complete. Loading modules...")
+                _snd_load_modules()
+                _snd_warn_if_dev_path()
+                _snd_run_seed()
+                on_complete()
+            end
+        end, "GET")
+    end
+end
+
+-- ─── FUNCTION EXTRACTOR ───────────────────────────────────────────────────────
+-- Extracts top-level Lua function definitions by scanning for `function` or
+-- `local function` at column 0, capturing until a bare `end` at column 0.
+-- Returns: { [funcname] = full_source_block_string }
+-- Limitation: the closing `end` must be at column 0 (standard module style).
+local function _snd_extract_fns(src)
+    local fns = {}
+    local name, body = nil, nil
+    for raw in (src .. "\n"):gmatch("([^\n]*)\n") do
+        if not name then
+            local n = raw:match("^function%s+([%w_.:-]+)%s*%(")
+                   or raw:match("^local%s+function%s+([%w_]+)%s*%(")
+            if n then name = n; body = {raw} end
+        else
+            body[#body + 1] = raw
+            -- Column-0 `end` (with optional comment) closes the function.
+            if raw == "end" or raw:match("^end%s*%-%-") then
+                fns[name] = table.concat(body, "\n")
+                name = nil
+            end
+        end
+    end
+    return fns
+end
+
+-- ─── BLANK-LINE-INSENSITIVE COMPARISON ────────────────────────────────────────
+-- Strips fully-blank (empty or whitespace-only) lines. Used only to decide
+-- whether a user's local copy counts as "modified" -- an added/removed blank
+-- line shouldn't trigger the merge machinery or a spurious backup.
+local function _snd_strip_blank_lines(s)
+    local out = {}
+    for line in (s .. "\n"):gmatch("([^\n]*)\n") do
+        if line:match("%S") then out[#out + 1] = line end
+    end
+    return table.concat(out, "\n")
+end
+
+-- ─── THREE-WAY MERGE ──────────────────────────────────────────────────────────
+-- Given original (downloaded baseline), local (user's copy), and new (remote):
+--
+-- For each top-level function in local:
+--   * Not in original → user ADDED it.
+--       - Not in new remote → auto-append to new file (safe).
+--       - Also in new remote → conflict; save to sidecar.
+--   * In original but body differs → user MODIFIED it.
+--       - New remote also changed it → conflict; save to sidecar.
+--       - New remote removed it entirely → can't splice it back into its old
+--         position; re-append your version instead of dropping it, and note
+--         it for review (upstream considering it obsolete is worth knowing).
+--       - New remote left it unchanged → your edit stays LIVE: spliced into
+--         the merged file in place of upstream's (identical-to-original)
+--         body, not reverted. Noted for visibility, not as a conflict.
+--
+-- Returns: merged_content (string), sidecar_content (string or nil)
+local function _snd_merge(orig_src, local_src, new_src)
+    local orig_fns  = _snd_extract_fns(orig_src  or "")
+    local local_fns = _snd_extract_fns(local_src or "")
+    local new_fns   = _snd_extract_fns(new_src   or "")
+
+    local merged    = new_src
+    local appended  = {}   -- safe-to-append user additions
+    local preserved = {}   -- user edits kept live (informational only)
+    local sidecar   = {}   -- conflicts / notes that need manual review
+
+    for fname, local_body in pairs(local_fns) do
+        if not orig_fns[fname] then
+            -- User added a brand-new function.
+            if not new_fns[fname] then
+                -- Upstream doesn't have it: safe to re-append.
+                appended[#appended + 1] = local_body
+            else
+                -- Upstream introduced the same name: conflict.
+                sidecar[#sidecar + 1] =
+                    "-- CONFLICT: upstream added '" .. fname ..
+                    "' — your version preserved below:\n" .. local_body
+            end
+        elseif local_body ~= orig_fns[fname] then
+            -- User modified an existing function.
+            if new_fns[fname] == nil then
+                -- Upstream removed it entirely; can't splice back into a
+                -- position that no longer exists. Re-append rather than drop.
+                appended[#appended + 1] = local_body
+                sidecar[#sidecar + 1] =
+                    "-- NOTE: '" .. fname .. "' was removed upstream, but you had\n" ..
+                    "-- modified it locally. Your version was re-appended rather than\n" ..
+                    "-- dropped — review whether it's still needed:\n" .. local_body
+            elseif new_fns[fname] ~= orig_fns[fname] then
+                -- Upstream also changed it: genuine conflict.
+                sidecar[#sidecar + 1] =
+                    "-- CONFLICT: '" .. fname ..
+                    "' changed both locally and upstream — your version preserved below:\n" ..
+                    local_body
+            else
+                -- Only you changed it; upstream left it alone. Keep your
+                -- version live by splicing it in place of upstream's
+                -- (identical-to-original) body in the new file.
+                local start_pos, end_pos = merged:find(new_fns[fname], 1, true)
+                if start_pos then
+                    merged = merged:sub(1, start_pos - 1) .. local_body .. merged:sub(end_pos + 1)
+                    preserved[#preserved + 1] = fname
+                else
+                    -- Couldn't locate the exact text to splice (shouldn't
+                    -- happen) -- fall back to a conflict rather than silently
+                    -- dropping the user's edit.
+                    sidecar[#sidecar + 1] =
+                        "-- CONFLICT: could not auto-preserve '" .. fname ..
+                        "' — your version preserved below:\n" .. local_body
+                end
+            end
+        end
+        -- Functions identical to original: nothing to do.
+    end
+
+    if #appended > 0 then
+        merged = merged
+            .. "\n\n-- ─── USER ADDITIONS (preserved by snd update) "
+            .. string.rep("─", 27) .. "\n"
+            .. "-- These functions were added by you and are not part of the standard\n"
+            .. "-- module. They were automatically re-appended during this update.\n\n"
+            .. table.concat(appended, "\n\n")
+            .. "\n"
+    end
+
+    -- Build sidecar content (nil if nothing to report).
+    local sidecar_out = nil
+    if #sidecar > 0 or #preserved > 0 then
+        local parts = {}
+        if #preserved > 0 then
+            parts[#parts + 1] =
+                "-- The following function(s) were modified by you and upstream left them\n" ..
+                "-- unchanged, so your version was kept live in the updated file:\n" ..
+                "--   " .. table.concat(preserved, ", ")
+        end
+        if #sidecar > 0 then
+            parts[#parts + 1] =
+                "-- The following need your attention -- review and manually re-apply\n" ..
+                "-- any changes you want to keep:\n\n" ..
+                table.concat(sidecar, "\n\n")
+        end
+        sidecar_out = "-- " .. string.rep("─", 70) .. "\n"
+            .. "-- snd update merge report — Generated: " .. os.date() .. "\n"
+            .. "-- " .. string.rep("─", 70) .. "\n\n"
+            .. table.concat(parts, "\n\n")
+            .. "\n"
+    end
+
+    return merged, sidecar_out
+end
+
+-- ─── FILE UPDATE HELPER ───────────────────────────────────────────────────────
+-- Applies new_content to fname, handling user modifications gracefully.
+-- Returns a status string plus, for failure statuses, a detail message:
+--   "new", "updated", "merged", "merged+sidecar", "force-updated"
+--   "write-error"             — could not write to disk
+--   "download-invalid", err   — the downloaded content itself isn't valid Lua
+--   "merge-failed-validation", err — the merged result isn't valid Lua; the
+--                                    user's existing working file was left
+--                                    untouched (backup + sidecar still written)
+local function _snd_apply_update(fname, new_content, force)
+    local prod_path   = _snd_prod_base .. fname
+    local orig_path   = _snd_prod_base .. fname .. ".orig"
+    local backup_path = _snd_prod_base .. fname .. ".backup"
+    local sidecar_path = _snd_prod_base .. fname .. ".user.lua"
+
+    local stored_hash  = GetVariable("_snd_dlhash_" .. fname) or ""
+    local local_content = _snd_read_file(prod_path)
+
+    -- Helper: write file + orig baseline + update hash.
+    local function commit(content)
+        if not _snd_write_file(prod_path, content)
+        or not _snd_write_file(orig_path, new_content) then
+            return false
+        end
+        SetVariable("_snd_dlhash_" .. fname, _snd_fnv1a(new_content))
+        return true
+    end
+
+    if not local_content then
+        -- File doesn't exist on disk; fresh download. Still validate --
+        -- a corrupt download must never be written as if it were good.
+        local chunk, err = loadstring(new_content)
+        if not chunk then return "download-invalid", err end
+        if not commit(new_content) then return "write-error" end
+        return "new"
+    end
+
+    local local_hash = _snd_fnv1a(local_content)
+    local user_has_changes = (local_hash ~= stored_hash)
+
+    -- A raw-byte difference might just be blank-line noise (trailing
+    -- newline, an extra blank line from an editor, etc.). Compare against
+    -- the actual downloaded baseline with blank lines stripped from both
+    -- sides before treating it as a real modification worth protecting.
+    if user_has_changes then
+        local orig_for_check = _snd_read_file(orig_path)
+        if orig_for_check
+        and _snd_strip_blank_lines(local_content) == _snd_strip_blank_lines(orig_for_check) then
+            user_has_changes = false
+        end
+    end
+
+    if not user_has_changes or force then
+        -- No real user changes (or force flag): straight overwrite.
+        local chunk, err = loadstring(new_content)
+        if not chunk then return "download-invalid", err end
+        if not commit(new_content) then return "write-error" end
+        return force and "force-updated" or "updated"
+    end
+
+    -- User has local changes: attempt 3-way merge (may or may not conflict with upstream).
+    local orig_content = _snd_read_file(orig_path) or local_content
+    local merged, sidecar = _snd_merge(orig_content, local_content, new_content)
+
+    -- Back up the user's current version before touching anything.
+    _snd_write_file(backup_path, local_content)
+
+    -- Validate the merged result BEFORE ever overwriting the user's working
+    -- file. If it doesn't even parse, keep their file exactly as it was --
+    -- still write the sidecar (if any) so they can see what upstream wanted.
+    local chunk, err = loadstring(merged)
+    if not chunk then
+        if sidecar then _snd_write_file(sidecar_path, sidecar) end
+        return "merge-failed-validation", err
+    end
+
+    if not commit(merged) then return "write-error" end
+
+    if sidecar then
+        _snd_write_file(sidecar_path, sidecar)
+        return "merged+sidecar"
+    end
+    return "merged"
+end
+
+-- ─── SMART UPDATE ─────────────────────────────────────────────────────────────
+-- Downloads manifest.json and updates only files whose remote hash changed.
+-- Blank-line-only local diffs don't count as a modification (see
+-- _snd_strip_blank_lines) -- only files with real edits go through the merge
+-- path below.
+-- For each changed file:
+--   * No real local changes: straight overwrite.
+--   * User modified the file: 3-way merge (see _snd_merge above).
+--     - User-added functions that don't conflict: auto-appended to new file.
+--     - User-modified functions upstream left alone: kept LIVE in the merged
+--       file (not reverted), noted in <file>.user.lua for visibility.
+--     - Genuine conflicts (changed on both sides, or upstream removed a
+--       function you'd modified): your version preserved in <file>.user.lua
+--       for manual review.
+--     - Old local version: always backed up as <file>.backup first.
+--     - The merged result is validated as loadable Lua before ever touching
+--       the production file; if it doesn't parse, your existing file is left
+--       untouched and the reason is reported.
+-- force=true: skip conflict detection; always overwrite (still backs up first).
+function _snd_smart_update(force)
+    local async_ok
+    async_ok, async = pcall(require, "async")
+    if not async_ok then
+        ColourNote("white", "red", "SnD: 'async' library not available.")
+        return
+    end
+
+    local json_ok
+    if not json then
+        json_ok, json = pcall(require, "json")
+    end
+
+    ColourNote("silver", "", "SnD: Checking for updates...")
+
+    async.doAsyncRemoteRequest(snd_raw_url("manifest.json"),
+    function(retval, page, status)
+        if status ~= 200 or not page or #page == 0 then
+            ColourNote("white", "darkred",
+                "SnD: Could not fetch manifest (HTTP " .. tostring(status) .. ")")
+            return
+        end
+
+        local ok, manifest = pcall(json.decode, page)
+        if not ok or type(manifest) ~= "table" or type(manifest.files) ~= "table" then
+            ColourNote("white", "red", "SnD: manifest.json parse error.")
+            return
+        end
+
+        -- Determine which files need downloading.
+        local to_download = {}
+
+        for _, entry in ipairs(manifest.files) do
+            local fname = entry.file
+            -- Never touch files served from the dev path.
+            if not _snd_file_exists(_snd_dev_base .. fname) then
+                local stored_hash  = GetVariable("_snd_dlhash_" .. fname) or ""
+                local remote_hash  = entry.hash
+                local prod_missing = not _snd_file_exists(_snd_prod_base .. fname)
+
+                if force or prod_missing or remote_hash ~= stored_hash then
+                    to_download[#to_download + 1] = entry
+                end
+            end
+        end
+
+        if #to_download == 0 then
+            ColourNote("silver", "", "SnD: All modules are up to date.")
+            return
+        end
+
+        ColourNote("silver", "",
+            "SnD: Downloading " .. #to_download .. " changed file(s)...")
+
+        local completed   = 0
+        local results     = {}  -- list of {fname, status}
+        local dl_failed   = {}
+
+        for _, entry in ipairs(to_download) do
+            local fname = entry.file
+            async.doAsyncRemoteRequest(snd_raw_url("lua/" .. fname),
+            function(r, content, s)
+                completed = completed + 1
+
+                if s == 200 and content and #content > 0 then
+                    local result_status, result_detail = _snd_apply_update(fname, content, force)
+                    results[#results + 1] = {fname = fname, status = result_status, detail = result_detail}
+                else
+                    dl_failed[#dl_failed + 1] = fname .. " (HTTP " .. tostring(s) .. ")"
+                end
+
+                if completed == #to_download then
+                    -- Report results.
+                    local plain, merged, sidecars, errors, merge_failed, dl_invalid =
+                        {}, {}, {}, {}, {}, {}
+                    for _, r2 in ipairs(results) do
+                        if r2.status == "write-error" then
+                            errors[#errors + 1] = r2.fname
+                        elseif r2.status == "merge-failed-validation" then
+                            merge_failed[#merge_failed + 1] = r2
+                        elseif r2.status == "download-invalid" then
+                            dl_invalid[#dl_invalid + 1] = r2
+                        elseif r2.status == "merged+sidecar" then
+                            sidecars[#sidecars + 1] = r2.fname
+                        elseif r2.status == "merged" then
+                            merged[#merged + 1] = r2.fname
+                        else
+                            plain[#plain + 1] = r2.fname
+                        end
+                    end
+
+                    if #plain > 0 then
+                        ColourNote("silver", "", "SnD: Updated: " ..
+                            table.concat(plain, ", "))
+                    end
+                    if #merged > 0 then
+                        ColourNote("lime", "",
+                            "SnD: Merged (your changes preserved): " ..
+                            table.concat(merged, ", "))
+                    end
+                    if #sidecars > 0 then
+                        ColourNote("yellow", "",
+                            "SnD: Merged with conflicts: " ..
+                            table.concat(sidecars, ", "))
+                        ColourNote("yellow", "",
+                            "SnD: Conflicting functions saved to <file>.user.lua —")
+                        ColourNote("yellow", "",
+                            "SnD: review and re-apply any changes you want to keep.")
+                        ColourNote("yellow", "",
+                            "SnD: Original local files backed up as <file>.backup.")
+                    end
+                    if #merge_failed > 0 then
+                        ColourNote("white", "red",
+                            "SnD: Merge failed for " .. #merge_failed ..
+                            " file(s) — your existing file(s) were left untouched:")
+                        for _, r2 in ipairs(merge_failed) do
+                            ColourNote("white", "red",
+                                "SnD:   " .. r2.fname .. " — " .. tostring(r2.detail))
+                        end
+                        ColourNote("yellow", "",
+                            "SnD: Upstream's intended changes were saved to <file>.user.lua for reference.")
+                    end
+                    if #dl_invalid > 0 then
+                        ColourNote("white", "red",
+                            "SnD: Downloaded file(s) failed to parse as Lua — not applied:")
+                        for _, r2 in ipairs(dl_invalid) do
+                            ColourNote("white", "red",
+                                "SnD:   " .. r2.fname .. " — " .. tostring(r2.detail))
+                        end
+                    end
+                    if #errors > 0 then
+                        ColourNote("white", "red",
+                            "SnD: Write errors: " .. table.concat(errors, ", "))
+                    end
+                    if #dl_failed > 0 then
+                        ColourNote("white", "red",
+                            "SnD: Download failed: " .. table.concat(dl_failed, ", "))
+                    end
+
+                    local total_ok = #plain + #merged + #sidecars
+                    if total_ok > 0 then
+                        ColourNote("silver", "",
+                            "SnD: Reload the plugin to apply updates.")
+                    end
+                end
+            end, "GET")
+        end
+    end, "GET")
+end
+
+-- ─── ALIAS HANDLERS ───────────────────────────────────────────────────────────
+
+function xset_snd_update(name, line, wildcards)
+    _snd_smart_update(false)
+end
+
+function xset_snd_force_update(name, line, wildcards)
+    _snd_smart_update(true)
+end
+
+-- ─── EAGER LOCAL LOAD ────────────────────────────────────────────────────────
+-- MUSHClient validates trigger/alias subroutines immediately after this script
+-- block, before OnPluginInstall fires.  Load local modules now (synchronously)
+-- so the validation passes.  When all modules are present locally, this also
+-- means OnPluginInstall's _snd_bootstrap() call becomes a cheap no-op.
+--
+-- If any module is missing (fresh install with nothing downloaded yet),
+-- we skip the eager load entirely; OnPluginInstall will download the files
+-- and load them, then re-enable triggers once ready.
+do
+    local all_present = true
+    for _, fname in ipairs(_snd_modules) do
+        if not _snd_resolve(fname) then
+            all_present = false
+            break
+        end
+    end
+    if all_present then
+        _snd_load_modules()
+        _snd_warn_if_dev_path()
+        _snd_modules_loaded = true
+    end
+end
+	]]>
+    </script>
+    <triggers>
++                                <!-- Receive xp -->
+        <trigger match="^You (?:don't )?receive \d+(?:\+\d+)* experience points?\." script="trigger_receive_xp" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n"></trigger>
+
+        <!-- Damage triggers -->
+        <trigger match="^.+\w[^A-Za-z]+(?:tickles|bruises|scratches|grazes|nicks|scars|hits|injures|wounds|mauls|maims|mangles|mars|LACERATES|DECIMATES|DEVASTATES|ERADICATES|OBLITERATES|EXTIRPATES|INCINERATES|MUTILATES|DISEMBOWELS|MASSACRES|DISMEMBERS|RENDS|BLASTS|DEMOLISHES|SHREDS|DESTROYS|PULVERIZES|VAPORIZES|ATOMIZES|ASPHYXIATES|RAVAGES|FISSURES|LIQUIDATES|EVAPORATES|SUNDERS|TEARS INTO|WASTES|CREMATES|ANNIHILATES|IMPLODES|EXTERMINATES|SHATTERS|SLAUGHTERS|RUPTURES|NUKES|GLACIATES|METEORITES|SUPERNOVAS|does UN\w+ things to|damages?|shreds|destroys|pulverizes|vaporizes|atomizes|asphyxiates|ravages|fissures|liquidates|evaporates|sunders|into|wastes|cremates|annihilates|implodes|exterminates|shatters|slaughters|ruptures|nukes|glaciates|meteorites|supernovas)[^A-Za-z]+(?<mob_name>\S.*)[!\.] \[\d+\]$" script="trigger_damage_done" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n"></trigger>
+
+        <trigger match="^(?:You assassinate |You catch |You attempt to bury .* deep into |You lunge at)(?<mob_name>.*)(?: with cold efficiency\.| completely off-guard and inflict massive damage on .*\.|'s? back!|with a .*!)$" script="trigger_damage_done" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n"></trigger>
+
+        <!-- Gquest operations -->
+        <!-- gq info and gq check are captured via Capture.untagged_output in  -->
+        <!-- lua/targets.lua.  No line-by-line triggers needed for them.        -->
+
+        <!-- gq messages to always listen for -->
+        <trigger match="^Global Quest: Global quest # (?<gq_id>\d{1,5}) has been declared for levels (?<min_lvl>\d{1,3}) to (?<max_lvl>\d{1,3})\.$" script="gqmsg_declared" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^You have now joined Global Quest # (?<gq_id>\d{1,5})\. See 'help gquest' for available commands\.$" script="gqmsg_joined" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^The global quest for levels (?<min_lvl>\d{1,3}) to (?<max_lvl>\d{1,3}) has now started\.$" script="gqmsg_started" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <!-- gq messages to only listen for when in a gquest -->
+        <trigger match="^You have finished this global quest\.$" script="gq_end_failed" name="trg_gq_finished_extended" group="trg_gqmsg" enabled="n" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^The global quest has been won by (?<winner>[A-Z][A-Za-z]+) - \d*(?:1st|2nd|3rd|\dth) win\.$" script="gqmsg_winner" name="trg_gqmsg_winner" group="trg_gqmsg" enabled="n" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^The global quest will go into extended time for \d+ more minutes?\.$" script="gqmsg_extended_time" name="trg_gqmsg_extended_time" group="trg_gqmsg_ext" enabled="n" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^Global Quest: (?:No active players remaining, )?Global [Qq]uest # (?<gq_id>\d{1,5}) is now over\.$" script="gq_ended" name="trg_gqmsg_extended_end" group="trg_gqmsg" enabled="n" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^Global Quest: Global quest # (?<gq_id>\d{1,5}) has been cancelled due to lack of activity\.$" script="gq_ended" name="trg_gqmsg_extended_end2" group="trg_gqmsg" enabled="n" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^Global Quest: (?<winner>\w+) has completed Global Quest # (?<gq_id>\d{1,5})\.$" script="gqmsg_completed_other" name="trg_gqmsg_completed_other" group="trg_gqmsg" enabled="n" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^You are no longer part of Global Quest # (?<gq_id>\d{1,5}) and will be unable to rejoin\.$" script="gq_quit_handler" name="trg_gqmsg_quit" group="trg_gqmsg" enabled="n" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^Congratulations, that was one of the GLOBAL QUEST mobs\!$" script="gq_mob_killed" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^You are not in a global quest\.$" script="player_not_on_gq" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^There are no global quests running\.$" script="player_not_on_gq" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^Global Quest # (?<gq_id>\d{1,5}) has not yet started\.$" script="gq_check_not_yet_started" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <!-- CAMPAIGN OPERATIONS -->
+        <!-- cp info and cp check are captured via Capture.untagged_output in   -->
+        <!-- lua/targets.lua.  No line-by-line triggers needed for them.        -->
+
+        <!-- CAMPAIGN STATUS TRACKING -->
+        <trigger match="^Congratulations, that was one of your CAMPAIGN mobs\!$" script="cp_mob_killed" name="trg_cp_mob_killed" group="trg_cp_2" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^CONGRATULATIONS\! You have completed your campaign\.$" script="do_cp_complete" name="trg_cp_complete" group="trg_cp_2" enabled="y" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^Campaign cleared\.$" script="do_cp_quit" name="trg_cp_quit" group="trg_cp_2" enabled="y" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^\w.+ tells you 'I have selected \d+ targets for you to hunt, .+\.'$" script="player_start_new_cp" name="trg_cp_request" group="trg_cp_2" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^You are not currently on a campaign\.$" script="player_not_on_cp" name="trg_player_not_on_cp" group="trg_cp_2" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^(?:(?:## )?You may now take another campaign\.|You may take (?:a campaign at this level|another campaign)\.)$" script="cp_check_can_get_new_cp" name="trg_can_get_new_cp" group="trg_cp_2" enabled="y" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^You (?:will have to level before you can go on another campaign|cannot take another campaign for (?:(?:\d+ hours?, )?\d+ minutes? and )?\d+ seconds?)\.$" name="trg_cannot_get_new_cp" group="trg_cp_2" script="cp_check_cannot_get_new_cp" enabled="y" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^You use a daily blessing campaign reset token to reset your campaign\.$" name="trg_cp_reset_token" group="trg_cp_2" script="" enabled="y" regexp="y" sequence="100" keep_evaluating="y" omit_from_output="n" send_to="12"></trigger>
+
+        <!-- QUICK WHERE -->
+        <trigger match="^(?<mobname>.{30}) (?<roomname>[^ (0-9].*)$" script="qw_match" name="trg_quick_where_match" group="QuickWhere" enabled="n" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^There is no \w.+ around here\.$" script="qw_no_match" name="trg_quick_where_no_match" group="QuickWhere" enabled="n" regexp="y" sequence="50" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^There are too many doors and fences to see who is in this area\.$" script="qw_area_too_complex" name="trg_quick_where_too_complex" group="QuickWhere" enabled="n" regexp="y" sequence="50" keep_evaluating="y" send_to="12"></trigger>
+
+        <!-- HUNT TRICK -->
+        <trigger match="^You are (?:almost )?certain that \w.+ is (?:north|south|east|west|up|down) from here\.|You are confident that \w.+ passed through here, heading (?:north|south|east|west|up|down)\.|The trail of \w.+ is confusing, but you're reasonably sure \w.+ headed (?:north|south|east|west|up|down)\.|There are traces of \w.+ having been here. Perhaps they lead (?:north|south|east|west|up|down)\?|You have no idea what you\'re doing\, but maybe \w.+ is (?:north|south|east|west|up|down)\?|You couldn\'t find a path to \w.+ from here\.|\w.+ is here\!$" script="ht_continue" name="trg_hunt_trick_continue_dir" group="HuntTrick" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^You are (?:almost )?certain that \w.+ is through .+\.|You are confident that \w.+ passed through here, heading through .+\.|The trail of \w.+ is confusing, but you're reasonably sure \w.+ headed through .+\.|There are traces of \w.+ having been here\. Perhaps they lead through \w.+\?|You have no idea which way \w.+ went\.$" script="ht_continue" name="trg_hunt_trick_continue_portal" group="HuntTrick" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^You seem unable to hunt that target for some reason\.$" script="ht_complete" name="trg_hunt_trick_complete" group="HuntTrick" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^\w.+ is here\!$" name="trg_hunt_trick_continue_2" group="HuntTrick" script="ht_continue" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^No one in this area by the name '\w.+'\.$" name="trg_hunt_trick_fail" group="HuntTrick" script="ht_fail" enabled="n" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^Not while you are fighting\!|You can't hunt while (?:resting|sitting)\.|You dream about going on a nice hunting trip, with pony rides, and campfires too\.|There are too many doors and fences to see who is in this area\.$" name="trg_hunt_trick_abort" group="HuntTrick" script="ht_abort" enabled="n" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <!--  AUTO HUNT -->
+        <trigger match="^You are (?:almost )?certain that (?<mob>\w.+) is (?<dir>north|south|east|west|up|down) from here\.$" script="auto_hunt_next" name="trg_autohunt_next_1" group="AutoHunt" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^You are confident that (?<mob>.+) passed through here\, heading (?<dir>north|south|east|west|up|down)\.$" script="auto_hunt_next" name="trg_autohunt_next_2" group="AutoHunt" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^The trail of \w.+ is confusing, but you\'re reasonably sure .+ headed (?:north|south|east|west|up|down)\.|There are traces of \w.+ having been here\. Perhaps they lead (?:north|south|east|west|up|down)\?|You have no idea what you\'re doing, but maybe \w.+ is (?:north|south|east|west|up|down)\?$" script="auto_hunt_lowskill" name="trg_autohunt_lowskill" group="AutoHunt" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^You are (?:almost )?certain that \w.+ is through .+\.|You are confident that \w.+ passed through here, heading through .+\.|The trail of \w.+ is confusing, but you're reasonably sure \w.+ headed through .+\.|There are traces of \w.+ having been here\. Perhaps they lead through .+\?|You have no idea what you\'re doing\, but maybe \w.+ is through .+\?$" script="auto_hunt_portal" name="trg_autohunt_portal" group="AutoHunt" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^No one in this area by the name '\w.+'\.|You couldn\'t find a path to \w.+ from here\.|No one in this area by that name\.|Not while you are fighting\!|You can't hunt while (?:resting|sitting)\.|You dream about going on a nice hunting trip, with pony rides, and campfires too\.$" script="auto_hunt_abort" name="trg_autohunt_abort" group="AutoHunt" enabled="n" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^You seem unable to hunt that target for some reason\.$" script="auto_hunt_abort" name="trg_hunt_trick" group="AutoHunt" enabled="n" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^\w.+ is here\!$" script="auto_hunt_complete" name="trg_autohunt_complete" group="AutoHunt" enabled="n" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^Magical wards around \w.+ bounce you back\.$" name="trg_autohunt_nopass" group="AutoHunt" script="auto_hunt_door" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^The \w.+ is closed\.$" name="trg_autohunt_door" group="AutoHunt" script="auto_hunt_door" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^You do not have a key for \w.+\.$" name="trg_autohunt_no_key" group="AutoHunt" script="auto_hunt_abort" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <trigger match="^You open \w.+\.$" name="trg_autohunt_door_open" group="AutoHunt" script="auto_hunt_door_open" enabled="n" regexp="y" sequence="100"></trigger>
+
+        <!-- AUTO SET NOEXP -->
+        <trigger match="^You will no longer receive experience\. Happy questing\!$" script="anex_automatic_off" name="trg_anex_automatic_off" enabled="y" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^You will now receive experience\. Happy leveling\!$" script="anex_automatic_on" name="trg_anex_automatic_on" enabled="y" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <trigger match="^You (?:don't )?receive (\d+)(?:\+\d+)? experience points?\.$" script="anex_mobdeath_xp1" name="trg_anex_mobdeath_xp1" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^You raise a level\! You are now level \d+\.$" script="player_level_up" name="trg_player_level_up" enabled="y" regexp="y" sequence="100" keep_evaluating="y"></trigger>
+
+        <!-- Consider: difficulty-coloured mob output (one trigger per CONSIDER_OUTCOMES entry). -->
+        <!-- Original lines are omitted; consider_mob_line reprints with colour + activity tags. -->
+
+        <trigger match="^You would stomp (?<mob_name>.+?) into the ground\.$" script="consider_mob_line" name="consider_mob_1" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^(?<mob_name>.+?) would be easy, but is it even worth the work out\?$" script="consider_mob_line" name="consider_mob_2" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^No Problem! (?<mob_name>.+?) is weak compared to you\.$" script="consider_mob_line" name="consider_mob_3" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^(?<mob_name>.+?) looks a little worried about the idea\.$" script="consider_mob_line" name="consider_mob_4" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^(?<mob_name>.+?) should be a fair fight!$" script="consider_mob_line" name="consider_mob_5" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^(?<mob_name>.+?) snickers nervously\.$" script="consider_mob_line" name="consider_mob_6" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^(?<mob_name>.+?) chuckles at the thought of you fighting \S+\.$" script="consider_mob_line" name="consider_mob_7" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^Best run away from (?<mob_name>.+?) while you can!$" script="consider_mob_line" name="consider_mob_8" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^Challenging (?<mob_name>.+?) would be either very brave or very stupid\.$" script="consider_mob_line" name="consider_mob_9" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^(?<mob_name>.+?) would crush you like a bug!$" script="consider_mob_line" name="consider_mob_10" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^(?<mob_name>.+?) would dance on your grave!$" script="consider_mob_line" name="consider_mob_11" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^(?<mob_name>.+?) says 'BEGONE FROM MY SIGHT unworthy!'$" script="consider_mob_line" name="consider_mob_12" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^You would be completely annihilated by (?<mob_name>.+?)!$" script="consider_mob_line" name="consider_mob_13" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <!-- Consider: unkillable mobs (divine protection / shopkeeper). -->
+
+        <trigger match="^(?<name>.+) has divine protection\.$" script="consider_unkillable" name="consider_protected" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^If you killed (?<name>.+), who would serve .+ customers\?$" script="consider_unkillable" name="consider_shopkeeper" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^$" name="consider_end" group="consider_end" script="consider_end" enabled="n" regexp="y" sequence="100" omit_from_output="n" send_to="12"></trigger>
+
+        <trigger match="^(?:You see no one here but yourself!|Strange forces prevent violence here\.)$" name="consider_end_empty" group="consider_end" script="consider_end" enabled="n" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <!-- Scan -->
+        <trigger match="^Tag option scan turned ON$" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="{scan}" script="scan_start" enabled="y" regexp="n" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="{/scan}" script="scan_end" enabled="y" regexp="n" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^Right here you see:$" script="scan_location_current_room" group="scan" enabled="n" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^(\d )?(North|East|South|West|Up|Down) from here you see:$" script="scan_location_nearby_room" group="scan" enabled="n" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^You see .+\.$" script="scan_door_nearby" group="scan" enabled="n" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^Nothing to see around here, might as well move on\.$" script="scan_empty" group="scan" enabled="n" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^ {5}-(?&lt;flags&gt;(?: ?\[AFK\]| ?\((?:W|wounded|aimed|Old|O)\))*)? (?&lt;mob_name&gt;.+)$" script="scan_mob" group="scan" enabled="n" regexp="y" ignore_case="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <!-- Roomchars -->
+        <trigger match="^Tag option roomchars turned ON$" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="{roomchars}" script="roomchars_start" enabled="y" regexp="n" sequence="50" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="{/roomchars}" script="roomchars_end" enabled="y" regexp="n" sequence="50" omit_from_output="y" send_to="12"></trigger>
+
+        <trigger match="^.+$" script="roomchars" name="roomchars" enabled="n" regexp="y" sequence="100" omit_from_output="n" send_to="12"></trigger>
+
+
+        <!-- Misc. gag triggers -->
+        <trigger match="^Players found: \[\d+\], Max this reboot: \[\d+\], Connections this reboot: \[\d+\]$" name="trg_gag_who_footer_1" enabled="n" regexp="y" sequence="100" keep_evaluating="y" omit_from_output="y"></trigger>
+
+        <trigger match="^Players invis: \[\d+\], Max on ever: \[\d+\]$" name="trg_gag_who_footer_2" enabled="n" regexp="y" sequence="100" keep_evaluating="y" omit_from_output="y"></trigger>
+
+        <trigger match="^[\s\S]*$" name="trg_gag_everything" enabled="n" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="y"></trigger>
+
+        <!-- History triggers -->
+         <trigger name="trigger_quest_premonition" match="^You ignore your premonition and request another quest.*$" script="trigger_quest_premonition" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n"></trigger>
+
+        <trigger name="trigger_campaign_rewards_qp" match="^Quest Points\.{7}: \[\s+(?<qp>\d+) \]$" script="trigger_campaign_rewards_qp" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n" group="trigger_group_campaign_rewards"></trigger>
+        <trigger name="trigger_campaign_rewards_gold" match="^Gold Coins\.{9}: \[\s+(?<gold>\d+) \]$" script="trigger_campaign_rewards_gold" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n" group="trigger_group_campaign_rewards"></trigger>
+        <trigger name="trigger_campaign_rewards_trains" match="^Training Sessions\.{2}: \[\s+(?<train>\d+) \]$" script="trigger_campaign_rewards_trains" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n" group="trigger_group_campaign_rewards"></trigger>
+        <trigger name="trigger_campaign_rewards_practices" match="^Practice Sessions\.{2}: \[\s+(?<prac>\d+) \]$" script="trigger_campaign_rewards_practices" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n" group="trigger_group_campaign_rewards"></trigger>
+        <trigger name="trigger_campaign_rewards_tps" match="^Trivia Points\.{6}: \[\s+(?<tp>\d+) \]$" script="trigger_campaign_rewards_tps" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n" group="trigger_group_campaign_rewards"></trigger>
+        <trigger name="trigger_campaign_rewards_bonus_qp" match="^You receive (?<qp>\d+) quest points bonus for your first campaign completed today.$" script="trigger_campaign_rewards_bonus_qp" ignore_case="y" enabled="y" regexp="y" sequence="1" keep_evaluating="y" omit_from_output="n" group="trigger_group_campaign_rewards"></trigger>
+
+        <!-- mobdeaths here output capture -->
+        <trigger name="trg_mobdeaths_start" match="^\s*\[\s*Most popular kills for levels \d+ to \d+ \(Current Area\)\s*\]\s*$" script="mobdeaths_trigger_start" enabled="y" regexp="y" sequence="100" omit_from_output="n" keep_evaluating="y"></trigger>
+        <trigger name="trg_mobdeaths_line" match="^\s*\d+ - .{39}\s+\d+\s+.+\s+\d+\s*$" script="mobdeaths_trigger_line" enabled="n" regexp="y" sequence="100" group="MobDeaths" omit_from_output="n" keep_evaluating="n"></trigger>
+        <trigger name="trg_mobdeaths_end" match="^-+\[\s*THE END\s*\]-+$" script="mobdeaths_trigger_end" enabled="n" regexp="y" sequence="100" group="MobDeaths" omit_from_output="n" keep_evaluating="n"></trigger>
+    </triggers>
+
+    <aliases>
+        <!-- Plugin Update automatic -->
+        <alias enabled="y" match="snd update" script="xset_snd_update" sequence="100">
+        </alias>
+        <alias enabled="y" match="^(?:xhelp|snd help)(?:\s(?<search>.*))?$" regexp="y" script="onHelp" sequence="100">
+        </alias>
+
+        <alias enabled="y" match="^snd force update(?: (?<branch>\S+))?$" script="xset_snd_force_update" regexp="y" sequence="100">
+        </alias>
+
+        <alias enabled="y" match="snd check_update" script="toggle_automatic_update_checking" sequence="100">
+        </alias>
+
+        <alias enabled="y" match="^xset silent(?: (on|off))?" regexp="y" script="xset_silent_mode" sequence="100">
+        </alias>
+
+        <!-- Auto-hunt commands-->
+        <alias match="^ah (?<arg>\w.+)$" script="auto_hunt" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(?:aha|ah0)$" script="auto_hunt_abort" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^ah$" script="auto_hunt_noarg" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- campaign data input: cp info, check -->
+        <alias match="^cp (?:i|info)$" script="do_cp_info" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^cp (?:ch|check)$" script="do_cp_check" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- gquest data input: gq info, check -->
+        <alias match="^gq i(?:n(?:fo?)?)?$" script="do_gq_info" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(?:gg|qq)$" script="do_gq_check" name="extra_gq_check_aliases" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(?:gq (?:c|ch|check))$" script="do_gq_check" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- xcp commands  -->
+        <alias match="^xcp$" script="xcp_noarg" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xcp (?<index>[0-9]+)$" script="xcp_arg" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xcp mode(?: (?<option>ht|qw|off))?$" script="xcp_set_action_mode" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xcp q(uest)?$" script="xcp_toggle_quest_targeting" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- movement: xrunto, go, nx, etc.  -->
+        <alias match="^(?:xrt|xrun|xrunto)$" script="xrt_noarg" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^(?:xrt|xrun|xrunto) (?<destination>.+)$" script="xrun_to_alias" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(?:go|goto)( (?<index>[0-9]+))?$" script="goto_number" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12" keep_evaluating="y"></alias>
+
+        <alias match="^nx$" script="goto_next" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^nx-$" script="goto_previous" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Automatic noexp -->
+        <alias match="^xset noexp( (?<arg>off|[0-9]+))?$" script="xset_noexp_tnl" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Quest commands -->
+        <alias match="^(?:xq|xq1)$" script="xq_command" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xqt$" script="retarget_quest" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Quick scan -->
+        <alias match="^qs$" script="quick_scan" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Quick-kill commands: qk, ak, kk, xset attack -->
+        <alias match="^(?:quick kill|ak|kk|qk)$" script="quick_kill" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset (?:kk|ak|qk|qkill)(?: (?<arg>.+))?$" script="xset_quick_kill_command" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Hunt trick -->
+        <alias match="^ht$" script="ht_noarg" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^ht(?:a|0| abort| stop)$" script="ht_abort" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^ht (?:(?<index>\d+)\.)?(?<mob>.+)?$" script="ht_arg" enabled="y" regexp="y" sequence="150" ignore_case="y" send_to="12"></alias>
+
+        <!-- Quick where -->
+        <alias match="^qw$" script="qw_noarg" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^qw (?:(?<index>\d+)\.)?(?<mob>.+)?$" script="qw_arg_alias" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^qwx$" script="qw_exact" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- roomnotes -->
+        <alias match="^(?:roomnote|rn)$" script="room_note" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(?:roomnote|rn) a(?:rea)?(?: (?<arid>.+))?$" script="room_note_area" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(?:roomnote|rn) (?<roomid>\d+)$" script="room_note_room" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Sql Execution -->
+        <alias match="^runsql (?<sql>.+)$" script="RunSql" enabled="y" regexp="y" sequence="1" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^execsql (?<sql>.+)$" script="ExecSql" enabled="y" regexp="y" sequence="1" ignore_case="y" send_to="12"></alias>
+
+        <!-- xmapper  -->
+        <alias match="^(?:xmap|xmapper) move (?<roomid>\d+|-1)(?: (?<speed>run|walk))?$" script="xmapper_move" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xm(?:\ {(?<mob>[^\}]+)\})? (?<loc>.+)$" script="map_area" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xmall(?:\ {(?<mob>[^\}]+)\})? (?<loc>.+)$" script="map_area_all" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(?:xm|xmap|xmapper) rlh(?: (?<room_id>\d+))?$" script="xmap_rooms_linking_here" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- xmark commands -->
+        <alias match="^xmark list(?:\s+(.+))?$" script="xmark_list" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- xset commands -->
+        <!-- xset mark: mark current room as area start; xset mark <name> <roomid>: named shortcut -->
+        <alias match="^xset mark$" script="xset_mark_current" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset mark (?<mname>\w+) (?<roomid>\d+)$" script="xset_mark_set" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- xset start: set an area's start room (areas table) -->
+        <alias match="^xset start(?:\s(\w+))?(?:\s(\d+))?$" script="xset_to_mark" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset gqalias$" script="xset_gqalias" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset vidblain$" script="xset_vidblain" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset vidblain level(?: (?<level>\d{1,3}))?$" script="xset_vidblain_setlevel" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset speed ?(?<speed>run|walk)?$" script="set_speed" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+
+        <alias match="^xset kw$" script="set_mob_keyword" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset kw (?<keyword>.+)$" script="set_current_mob_keyword" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset marks$" script="xset_marks_list" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset marks (?!edit |del(?:ete)? )(?<kw>.+)$" script="xset_marks_search" enabled="y" regexp="y" sequence="150" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset marks edit (?<idx>\d+)$" script="xset_marks_edit" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset marks del(?:ete)? (?<idx>\d+)$" script="xset_marks_delete" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- xset import: one-time import of marks/areas from old plugin state variables -->
+        <alias match="^xset import$" script="xset_import_area_vars" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset nx$" script="xset_nx_check" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset nx (?<action>smartscan|con|scan|scanhere|qs|none)$" script="xset_nx" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset con_overwrite" script="xset_con_overwrite" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset sound$" script="xset_sound" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset table notes$" script="xset_table_notes" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset table width (?<width>\d{2,3})$" script="xset_table_width" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+	<alias match="^xset express ?(?<state>on|off)? ?(?<min_kill>\d+)?$" script="xset_express" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12" > </alias>
+
+        <alias match="^xset autonav ?(?<state>on|off)?$" script="xset_autonav" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset maze$" script="xset_maze" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset maze list$" script="xset_maze_list" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset maze del(?:ete)? (?<roomid>\d+)$" script="xset_maze_delete" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- xset window commands -->
+        <alias match="^xset fontsize.*$" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12">
+            <send>Note("Changing font size: right-click the targets window title bar and choose 'Change Font'")</send>
+        </alias>
+
+        <alias match="^xset linespace.*$" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12">
+            <send>Note("Line spacing is set automatically by the font — right-click the targets window title bar and choose 'Change Font'")</send>
+        </alias>
+
+        <alias match="^xset winreset$" script="xg_create_window" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset (?:window|win) (?<onoff>on|off|show|hide|0|1|true|false|max(?:imize)?|expand|min(?:imize)?|collapse)$" script="xg_toggle_window" enabled="y" regexp="y" sequence="100"></alias>
+
+        <alias match="^(?:xw|xwh|xwhere)( (?<n1>\d+))?( (?<n2>\d+))?( (?<mob>.+))?$" script="do_xwhere" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(?:xg|xgui) (?:ref|refresh)$" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12">
+            <send>if current_activity == "gq" then do_gq_check() else do_cp_check() end</send>
+        </alias>
+
+        <alias match="^(?:xg|xgui) (?:rel|reload)$" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12">
+            <send>if current_activity == "gq" then do_gq_info() else do_cp_info() end</send>
+        </alias>
+
+
+        <!-- xtest commands -->
+        <alias match="^xtest areadata$" script="xtest_areadata" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest mcvars$" script="xtest_mcvars" enabled="y" regexp="y" sequence="100"></alias>
+
+        <alias match="^xtest roomhist$" script="xtest_roomhist" enabled="y" regexp="y" sequence="100"></alias>
+
+        <alias match="^xtest simulate cp(?: (?<type>area|room))?$" script="simulate_cp" enabled="y" regexp="y" sequence="1" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate level (?<level>\d{1,3})$" script="spoof_level" enabled="y" regexp="y" sequence="1" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate q(?:uest)?(?: (?<status>start|status|killed|comp|fail|reset|ready|timeout|statkilled|wait|ready))?$" script="simulate_quest" enabled="y" regexp="y" sequence="1" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest debug gq(uest)?$" script="xtest_debug_gquest" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate gq wait(?: (?<num>\d{1,5}))?$" script="xtest_gq_waiting" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate gq start(?: (?<type>area|room))?(?: (?<num>\d{1,5}))?$" script="xtest_gq_start" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate gq join (?<num>\d{1,5})(?: (?<silent>s))?$" script="xtest_gq_join" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate gq end(?: (?<num>\d{1,5}))?$" script="xtest_gq_end" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate gq win(?: (?<num>\d{1,5}))?$" script="xtest_gq_win" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate gq lose(?: (?<num>\d{1,5}))?(?<noextend> noextended)$" script="xtest_gq_lose" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate gq kill(?: (?<num>\d+))?$" script="xtest_gq_kill" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate gq quit(?: (?<num>\d{1,5}))?$" script="xtest_gq_quit" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest simulate xcp(?: (?<num>\d+))?$" script="xtest_xcp" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest gqid$" script="echo_gqid_joined" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest loadroom(?: (?<roomid>\d+))?$" script="xtest_loadroom" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest popmsg$" script="xtest_popmsg" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest debug$" script="xtest_debug" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest qt (?<qt>\d{1,2})$" script="xtest_set_qt" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xtest target$" script="xtest_print_target" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset debug(?: (?<option>on|off))?$" script="xset_debug" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^snd settings?$" script="sp_toggle" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^snd debug(?: (?<action>clear))?$" script="snd_debug_cmd" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^snd reload$" script="sndReload" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- New commands -->
+        <alias match="^x?m(?:ob)?s(?:earch)?(?:\s+(.+))?$" script="onSearch" group="Mob_Database" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^x?mgo(?:to)? (\d+)$" script="mobGo" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(snd migrate|mergePwar)$" script="copyPwarWarn" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^(snd migrate|mergePwar) confirm$" script="copyPwarDB" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^snd changelog$" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12">
+            <send>get_changelog("new")</send>
+        </alias>
+
+        <alias match="^snd changelog all$" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12">
+            <send>get_changelog("all")</send>
+        </alias>
+
+        <alias match="^snd changelog since (?<version>\S+)$" script="changelog_since" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- History and stats commands -->
+        <alias match="^snd history(?<hist_type> (campaign|cp|quest|q|gq|gquest))?$" script="alias_print_history" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^snd stats(?<arg1> \w+)?(?<arg2> \w+)?(?<arg3> \w+)?$" script="alias_print_stats" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^snd summary$" script="alias_session_summary" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Pathing, level buffer, and room link settings -->
+        <alias match="^xset pathing express\s*(?<option>.*)$" script="xset_pathing_express" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset pathing(?: (?<option>on|off))?$" script="xset_pathing" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset level.?buffer(?: (?<value>\d+))?$" script="xset_level_buffer" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset level (\S+) (\d+) (\d+)$" script="xset_level_area" enabled="y" regexp="y" sequence="99" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset level (\S+) reset$" script="xset_level_area_reset" enabled="y" regexp="y" sequence="99" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset rlink(?: (?<r1>\d+) (?<r2>\d+)(?:\s+\{(?<note>[^}]*)\})?)?$" script="xset_rlink" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Area indexing from MUD 'areas keywords' output -->
+        <alias match="^xset index(?: (?<target>areas|\S+))?$" script="xset_index_areas" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Custom area management (non-JSON areas) -->
+        <alias match="^xset area list$" script="xset_area_list" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area list unset$" script="xset_area_list_unset" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area del(?:ete)? (?<key>\w+)$" script="xset_area_delete" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area edit (?<key>\w+) start (?<roomid>\d+)$" script="xset_area_edit_start" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area edit (?<key>\w+) min (?<level>\d{1,3})$" script="xset_area_edit_min" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area edit (?<key>\w+) max (?<level>\d{1,3})$" script="xset_area_edit_max" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area edit (?<key>\w+) lock (?<lock>\d{1,3})$" script="xset_area_edit_lock" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area edit (?<key>\w+) noquest (?<val>on|off|0|1)$" script="xset_area_edit_noquest" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area edit (?<key>\w+) vidblain (?<val>on|off|0|1)$" script="xset_area_edit_vidblain" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area edit (?<key>\w+) name (?<aname>.+)$" script="xset_area_edit_name" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset area edit (?<key>\w+) difficulty (?<diff>\d)$" script="xset_area_edit_difficulty" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- Mob flag management -->
+        <alias match="^xset mob nowhere (?<mob>.+)$" script="xset_mob_nowhere" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset mob nohunt (?<mob>.+)$" script="xset_mob_nohunt" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset mob noscan (?<mob>.+)$" script="xset_mob_noscan" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset mob noaction (?<mob>.+)$" script="xset_mob_noaction" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset mob difficulty\s*(?<args>.*)$" script="xset_mob_difficulty" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset mob levelok (?<mob>.+)$" script="xset_mob_levelok" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset mob express\s*(?<args>.*)$" script="xset_mob_express" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset mob priority (?<mob>.+)$" script="xset_mob_priority" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset mob unpriority (?<mob>.+)$" script="xset_mob_unpriority" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset mob tags?(?:\s+(?<zone>\w+))?$" script="xset_mob_tags" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset mob clearflags (?<mob>.+)$" script="xset_mob_clearflags" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xmobdeaths$" script="xmobdeaths_cmd" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <!-- DB cleanup: strip mob flags and merge case duplicates -->
+        <alias match="^xdb clean$" script="xdb_clean" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+    </aliases>
+</muclient>

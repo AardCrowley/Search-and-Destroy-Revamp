@@ -1,0 +1,2486 @@
+[
+  {
+    "key": "abend",
+    "name": "The Dark Continent, Abend",
+    "start_room": 24909,
+    "noquest": false,
+    "vidblain": false,
+    "minlvl": 1,
+    "maxlvl": 201
+  },
+  {
+    "key": "alagh",
+    "name": "Alagh, the Blood Lands",
+    "start_room": 3224,
+    "noquest": false,
+    "vidblain": false,
+    "minlvl": 1,
+    "maxlvl": 201
+  },
+  {
+    "key": "gelidus",
+    "name": "Gelidus",
+    "start_room": 18780,
+    "noquest": false,
+    "vidblain": false,
+    "minlvl": 1,
+    "maxlvl": 201
+  },
+  {
+    "key": "mesolar",
+    "name": "The Continent of Mesolar",
+    "start_room": 12664,
+    "noquest": false,
+    "vidblain": false,
+    "minlvl": 1,
+    "maxlvl": 201
+  },
+  {
+    "key": "southern",
+    "name": "The Southern Ocean",
+    "start_room": 5192,
+    "noquest": false,
+    "vidblain": false,
+    "minlvl": 1,
+    "maxlvl": 201
+  },
+  {
+    "key": "uncharted",
+    "name": "The Uncharted Oceans",
+    "start_room": 7701,
+    "noquest": false,
+    "vidblain": false,
+    "minlvl": 1,
+    "maxlvl": 201
+  },
+  {
+    "key": "vidblain",
+    "name": "Vidblain, the Ever Dark",
+    "start_room": 33570,
+    "noquest": false,
+    "vidblain": true,
+    "minlvl": 1,
+    "maxlvl": 201
+  },
+  {
+    "key": "aardington",
+    "name": "Aardington Estate",
+    "start_room": 47509,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "academy",
+    "name": "The Aylorian Academy",
+    "start_room": 35233,
+    "maxlvl": 10,
+    "minlvl": 1,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "adaldar",
+    "name": "Battlefields of Adaldar",
+    "start_room": 34400,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "afterglow",
+    "name": "Afterglow",
+    "start_room": 38134,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "agroth",
+    "name": "The Marshlands of Agroth",
+    "start_room": 11027,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "ahner",
+    "name": "Kingdom of Ahner",
+    "start_room": 30129,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "alehouse",
+    "name": "Wayward Alehouse",
+    "start_room": 885,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "amazon",
+    "name": "The Amazon Nation",
+    "start_room": 1409,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "amusement",
+    "name": "The Amusement Park",
+    "start_room": 29282,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "andarin",
+    "name": "The Blighted Tundra of Andarin",
+    "start_room": 2399,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "annwn",
+    "name": "Annwn",
+    "start_room": 28963,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "anthrox",
+    "name": "Anthrox",
+    "start_room": 3993,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "arboretum",
+    "name": "Arboretum",
+    "start_room": 39100,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "arena",
+    "name": "The Gladiator's Arena",
+    "start_room": 25768,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "arisian",
+    "name": "Arisian Realm",
+    "start_room": 28144,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "ascent",
+    "name": "The First Ascent",
+    "start_room": 43150,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "asherodan",
+    "name": "The Keep of the Asherodan",
+    "start_room": 37400,
+    "vidblain": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false
+  },
+  {
+    "key": "astral",
+    "name": "The Astral Travels",
+    "start_room": 27882,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "atlantis",
+    "name": "Atlantis",
+    "start_room": 10573,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "autumn",
+    "name": "Eternal Autumn",
+    "start_room": 13839,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "avian",
+    "name": "Avian Kingdom",
+    "start_room": 4334,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "aylor",
+    "name": "The Grand City of Aylor",
+    "start_room": 32418,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "bazaar",
+    "name": "Onyx Bazaar",
+    "start_room": 34454,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "beer",
+    "name": "The Land of the Beer Goblins",
+    "start_room": 20062,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "believer",
+    "name": "The Path of the Believer",
+    "start_room": 25940,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "blackrose",
+    "name": "Black Rose",
+    "start_room": 1817,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "bliss",
+    "name": "Wedded Bliss",
+    "start_room": 29988,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "bonds",
+    "name": "Unearthly Bonds",
+    "start_room": 23411,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "caldera",
+    "name": "The Icy Caldera of Mauldoon",
+    "start_room": 26341,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "callhero",
+    "name": "The Call of Heroes",
+    "start_room": 33031,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "camps",
+    "name": "Tournament Camps",
+    "start_room": 4714,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "canyon",
+    "name": "Canyon Memorial Hospital",
+    "start_room": 25551,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "caravan",
+    "name": "Wayfarer's Caravan",
+    "start_room": 16071,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "cards",
+    "name": "House of Cards",
+    "start_room": 6255,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "carnivale",
+    "name": "Olde Worlde Carnivale",
+    "start_room": 28635,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "cataclysm",
+    "name": "The Cataclysm",
+    "start_room": 19976,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "cathedral",
+    "name": "The Old Cathedral",
+    "start_room": 27497,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "cats",
+    "name": "Sheila's Cat Sanctuary",
+    "start_room": 40900,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "chasm",
+    "name": "The Chasm and The Catacombs",
+    "start_room": 29446,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "chakra",
+    "name": "Chakra Spire",
+    "start_room": null,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "chantry",
+    "name": "Fellchantry",
+    "start_room": null,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "chessboard",
+    "name": "The Chessboard",
+    "start_room": 25513,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "childsplay",
+    "name": "Child's Play",
+    "start_room": 678,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "cineko",
+    "name": "Aerial City of Cineko",
+    "start_room": 1507,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "citadel",
+    "name": "The Flying Citadel",
+    "start_room": 14963,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "conflict",
+    "name": "Thandeld's Conflict",
+    "start_room": 27711,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "coral",
+    "name": "The Coral Kingdom",
+    "start_room": 4565,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "cougarian",
+    "name": "The Cougarian Queendom",
+    "start_room": 14311,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "cove",
+    "name": "Kiksaadi Cove",
+    "start_room": 49941,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "cradle",
+    "name": "Cradlebrook",
+    "start_room": 11267,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "crynn",
+    "name": "Crynn's Church",
+    "start_room": 43800,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "damned",
+    "name": "Halls of the Damned",
+    "start_room": 10469,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "darklight",
+    "name": "The DarkLight",
+    "start_room": 19642,
+    "vidblain": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false
+  },
+  {
+    "key": "darkside",
+    "name": "The Darkside of the Fractured Lands",
+    "start_room": 15060,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "ddoom",
+    "name": "Desert Doom",
+    "start_room": 4193,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "deadlights",
+    "name": "The Deadlights",
+    "start_room": 16856,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "deathtrap",
+    "name": "Deathtrap Dungeon",
+    "start_room": 1767,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "deneria",
+    "name": "Realm of Deneria",
+    "start_room": 35006,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "desert",
+    "name": "The Desert Prison",
+    "start_room": 20186,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "desolation",
+    "name": "The Mountains of Desolation",
+    "start_room": 19532,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "dhalgora",
+    "name": "Dhal'Gora Outlands",
+    "start_room": 16755,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "diatz",
+    "name": "The Three Pillars of Diatz",
+    "start_room": 1254,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "diner",
+    "name": "Tumari's Diner",
+    "start_room": 36700,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "dortmund",
+    "name": "Dortmund",
+    "start_room": 16577,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "drageran",
+    "name": "The Drageran Empire",
+    "start_room": 25894,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "dread",
+    "name": "Dread Tower",
+    "start_room": 26075,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "dsr",
+    "name": "Diamond Soul Revelation",
+    "start_room": 30030,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "dundoom",
+    "name": "The Dungeon of Doom",
+    "start_room": 25661,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "dunes",
+    "name": "Dunes in Gold",
+    "start_room": 42170,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "dunoir",
+    "name": "Mount duNoir",
+    "start_room": 14222,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "duskvalley",
+    "name": "Dusk Valley",
+    "start_room": 37301,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "dynasty",
+    "name": "The Eighteenth Dynasty",
+    "start_room": 30799,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "earthlords",
+    "name": "The Earth Lords",
+    "start_room": 42000,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "earthplane",
+    "name": "Earth Plane 4",
+    "start_room": 1354,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "elemental",
+    "name": "Elemental Chaos",
+    "start_room": 41624,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "empire",
+    "name": "The Empire of Aiighialla",
+    "start_room": 32203,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "empyrean",
+    "name": "Empyrean, Streets of Downfall",
+    "start_room": 14042,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "entropy",
+    "name": "The Archipelago of Entropy",
+    "start_room": 29773,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "fantasy",
+    "name": "Fantasy Fields",
+    "start_room": 15205,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "farm",
+    "name": "Kimr's Farm",
+    "start_room": 10676,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "fayke",
+    "name": "All in a Fayke Day",
+    "start_room": 30418,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "fens",
+    "name": "The Curse of the Midnight Fens",
+    "start_room": 16528,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "fields",
+    "name": "The Killing Fields",
+    "start_room": 29232,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "firebird",
+    "name": "Realm of the Firebird",
+    "start_room": 32885,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "firenation",
+    "name": "Realm of the Sacred Flame",
+    "start_room": 41879,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "fireswamp",
+    "name": "The Fire Swamp",
+    "start_room": 34755,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "fortress",
+    "name": "The Goblin Fortress",
+    "start_room": 31835,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "fortune",
+    "name": "Crossroads of Fortune",
+    "start_room": 38561,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "fractured",
+    "name": "The Fractured Lands",
+    "start_room": 17033,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "ft1",
+    "name": "Faerie Tales",
+    "start_room": 1205,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "ftii",
+    "name": "Faerie Tales II",
+    "start_room": 26673,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "gallows",
+    "name": "Gallows Hill",
+    "start_room": 4344,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "gathering",
+    "name": "The Gathering Horde",
+    "start_room": 36451,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "gauntlet",
+    "name": "The Gauntlet",
+    "start_room": 31652,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "gilda",
+    "name": "Gilda And The Dragon",
+    "start_room": 4243,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "glamdursil",
+    "name": "The Glamdursil",
+    "start_room": 35055,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "glimmerdim",
+    "name": "Brightsea and Glimmerdim",
+    "start_room": 26252,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "gnomalin",
+    "name": "Cloud City of Gnomalin",
+    "start_room": 34397,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "goldrush",
+    "name": "Gold Rush",
+    "start_room": 15014,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "graveyard",
+    "name": "The Graveyard",
+    "start_room": 28918,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "greece",
+    "name": "Ancient Greece",
+    "start_room": 2089,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "gwillim",
+    "name": "The Trouble with Gwillimberry",
+    "start_room": 25974,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "hades",
+    "name": "Entrance to Hades",
+    "start_room": 29161,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "hatchling",
+    "name": "Hatchling Aerie",
+    "start_room": 34670,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "hawklord",
+    "name": "The Realm of the Hawklords",
+    "start_room": 40550,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "hedge",
+    "name": "Hedgehogs' Paradise",
+    "start_room": 15146,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "helegear",
+    "name": "Helegear Sea",
+    "start_room": 30699,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "hell",
+    "name": "Descent to Hell",
+    "start_room": 30984,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "hoard",
+    "name": "Swordbreaker's Hoard",
+    "start_room": 1675,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "hodgepodge",
+    "name": "A Magical Hodgepodge",
+    "start_room": 30469,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "horath",
+    "name": "The Broken Halls of Horath",
+    "start_room": 91,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "horizon",
+    "name": "Nebulous Horizon",
+    "start_room": 31959,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "illoria",
+    "name": "The Tournament of Illoria",
+    "start_room": 10420,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "imagi",
+    "name": "Imagi's Nation",
+    "start_room": 36800,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "imperial",
+    "name": "Imperial Nation",
+    "start_room": 16966,
+    "vidblain": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false
+  },
+  {
+    "key": "infamy",
+    "name": "The Realm of Infamy",
+    "start_room": 26641,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "infest",
+    "name": "The Infestation",
+    "start_room": 16165,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "insan",
+    "name": "Insanitaria",
+    "start_room": 6850,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "jenny",
+    "name": "Jenny's Tavern",
+    "start_room": 29637,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "jotun",
+    "name": "Jotunheim",
+    "start_room": 31508,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "kearvek",
+    "name": "The Keep of Kearvek",
+    "start_room": 29722,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "kerofk",
+    "name": "Kerofk",
+    "start_room": 16405,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "ketu",
+    "name": "Ketu Uplands",
+    "start_room": 35114,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "kingsholm",
+    "name": "Kingsholm",
+    "start_room": 27522,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "knossos",
+    "name": "The Great City of Knossos",
+    "start_room": 28193,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "kobaloi",
+    "name": "Keep of the Kobaloi",
+    "start_room": 10691,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "kultiras",
+    "name": "Kul Tiras",
+    "start_room": 31161,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "lab",
+    "name": "Chaprenula's Laboratory",
+    "start_room": 28684,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "labyrinth",
+    "name": "The Labyrinth",
+    "start_room": 31405,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "lagoon",
+    "name": "Black Lagoon",
+    "start_room": 30549,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "landofoz",
+    "name": "The Land of Oz",
+    "start_room": 510,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "laym",
+    "name": "Tai'rha Laym",
+    "start_room": 6005,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "legend",
+    "name": "Land of Legend",
+    "start_room": 16224,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "lemdagor",
+    "name": "Storm Ships of Lem-Dagor",
+    "start_room": 1966,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "lidnesh",
+    "name": "The Forest of Li'Dnesh",
+    "start_room": 27995,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "livingmine",
+    "name": "Living Mines of Dak'Tai",
+    "start_room": 37008,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "logging",
+    "name": "Svrogan's Logging Camp",
+    "start_room": 31254,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "longnight",
+    "name": "Into the Long Night",
+    "start_room": 26367,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "losttime",
+    "name": "Island of Lost Time",
+    "start_room": 28584,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "lowlands",
+    "name": "The Lowlands",
+    "start_room": 28044,
+    "maxlvl": 10,
+    "minlvl": 1,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "lplanes",
+    "name": "The Lower Planes",
+    "start_room": 29364,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "maelstrom",
+    "name": "The Maelstrom",
+    "start_room": 38058,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "manor",
+    "name": "Death's Manor",
+    "start_room": 10621,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "masq",
+    "name": "Masquerade Island",
+    "start_room": 29840,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "mayhem",
+    "name": "Artificer's Mayhem",
+    "start_room": 1866,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "melody",
+    "name": "Art of Melody",
+    "start_room": 14172,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "minos",
+    "name": "The Shadows of Minos",
+    "start_room": 20472,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "mistridge",
+    "name": "The Covenant of Mistridge",
+    "start_room": 4491,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "monastery",
+    "name": "The Monastery",
+    "start_room": 15756,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "mudwog",
+    "name": "Mudwog's Swamp",
+    "start_room": 2347,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "nanjiki",
+    "name": "Nanjiki Ruins",
+    "start_room": 11203,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "necro",
+    "name": "Necromancers' Guild",
+    "start_room": 29922,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "nenukon",
+    "name": "Nenukon and the Far Country",
+    "start_room": 31784,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "newthalos",
+    "name": "New Thalos",
+    "start_room": 23853,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "ninehells",
+    "name": "The Nine Hells",
+    "start_room": 4613,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "northstar",
+    "name": "Northstar",
+    "start_room": 11127,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "nottingham",
+    "name": "Nottingham",
+    "start_room": 11077,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "nulan",
+    "name": "Plains of Nulan'Boar",
+    "start_room": 37900,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "nursing",
+    "name": "Ascension Bluff Nursing Home",
+    "start_room": 31977,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "nynewoods",
+    "name": "The Nyne Woods",
+    "start_room": 23562,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "oceanpark",
+    "name": "Andolor's Ocean Adventure Park",
+    "start_room": 39600,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "omentor",
+    "name": "The Witches of Omen Tor",
+    "start_room": 15579,
+    "vidblain": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false
+  },
+  {
+    "key": "ooku",
+    "name": "Ookushka Garrison",
+    "start_room": 39000,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "origins",
+    "name": "Tribal Origins",
+    "start_room": 35900,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "orlando",
+    "name": "Hotel Orlando",
+    "start_room": 30331,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "paradise",
+    "name": "Paradise Lost",
+    "start_room": 29624,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "partroxis",
+    "name": "The Partroxis",
+    "start_room": 5814,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "peninsula",
+    "name": "Tairayden Peninsula",
+    "start_room": 35701,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "petstore",
+    "name": "Giant's Pet Store",
+    "start_room": 995,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "pompeii",
+    "name": "Pompeii",
+    "start_room": 57,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "promises",
+    "name": "Foolish Promises",
+    "start_room": 25819,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "prosper",
+    "name": "Prosper's Island",
+    "start_room": 28268,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "qong",
+    "name": "Qong",
+    "start_room": 16115,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "quarry",
+    "name": "Gnoll's Quarry",
+    "start_room": 23510,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "radiance",
+    "name": "Radiance Woods",
+    "start_room": 19805,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "raga",
+    "name": "Raganatittu",
+    "start_room": 19861,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "raukora",
+    "name": "The Blood Opal of Rauko'ra",
+    "start_room": 6040,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "rebellion",
+    "name": "Rebellion of the Nix",
+    "start_room": 10305,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "remcon",
+    "name": "The Reman Conspiracy",
+    "start_room": 25837,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "reme",
+    "name": "The Imperial City of Reme",
+    "start_room": 32703,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "rosewood",
+    "name": "Rosewood Castle",
+    "start_room": 6901,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "ruins",
+    "name": "The Ruins of Diamond Reach",
+    "start_room": 16805,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "sagewood",
+    "name": "Sagewood Grove",
+    "start_room": 28754,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "sahuagin",
+    "name": "The Abyssal Caverns of Sahuagin",
+    "start_room": 34592,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "salt",
+    "name": "The Great Salt Flats",
+    "start_room": 4538,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "sanctity",
+    "name": "Sanctity of Eternal Damnation",
+    "start_room": 10518,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "sanctum",
+    "name": "The Blood Sanctum",
+    "start_room": 15307,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "sandcastle",
+    "name": "Sho'aram, Castle in the Sand",
+    "start_room": 37701,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "sanguine",
+    "name": "The Sanguine Tavern",
+    "start_room": 15436,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "scarred",
+    "name": "The Scarred Lands",
+    "start_room": 34036,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "sendhian",
+    "name": "Adventures in Sendhia",
+    "start_room": 20288,
+    "vidblain": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false
+  },
+  {
+    "key": "sennarre",
+    "name": "Sen'narre Lake",
+    "start_room": 15491,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "shadowsend",
+    "name": "Shadow's End",
+    "start_room": 40096,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "shouggoth",
+    "name": "The Temple of Shouggoth",
+    "start_room": 34087,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "siege",
+    "name": "Kobold Siege Camp",
+    "start_room": 43265,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "sirens",
+    "name": "Siren's Oasis Resort",
+    "start_room": 16298,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "slaughter",
+    "name": "The Slaughter House",
+    "start_room": 1601,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "snuckles",
+    "name": "Snuckles Village",
+    "start_room": 182,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "soh",
+    "name": "The School of Horror",
+    "start_room": 25611,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "sohtwo",
+    "name": "The School of Horror 2",
+    "start_room": 30752,
+    "minlvl": 170,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "solan",
+    "name": "The Town of Solan",
+    "start_room": 23713,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "songpalace",
+    "name": "The Palace of Song",
+    "start_room": 47013,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "spyreknow",
+    "name": "Guardian's Spyre of Knowledge",
+    "start_room": 34800,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "stone",
+    "name": "The Fabled City of Stone",
+    "start_room": 11386,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "storm",
+    "name": "Storm Mountain",
+    "start_room": 6304,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "stormhaven",
+    "name": "The Ruins of Stormhaven",
+    "start_room": 20649,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "stronghold",
+    "name": "Dark Elf Stronghold",
+    "start_room": 20572,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "stuff",
+    "name": "The Stuff of Shadows",
+    "start_room": 40400,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "takeda",
+    "name": "Takeda's Warcamp",
+    "start_room": 15952,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "talsa",
+    "name": "The Empire of Talsa",
+    "start_room": 26917,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "tanra",
+    "name": "Tanra'vea",
+    "start_room": 46913,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "temple",
+    "name": "The Temple of Shal'indrael",
+    "start_room": 31597,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "terra",
+    "name": "The Cracks of Terra",
+    "start_room": 19679,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "terramire",
+    "name": "Fort Terramire",
+    "start_room": 4493,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "thieves",
+    "name": "Den of Thieves",
+    "start_room": 7,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "tilule",
+    "name": "Tilule Rehabilitation Clinic",
+    "start_room": 39771,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "times",
+    "name": "Intrigues of Times Past",
+    "start_room": 28463,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "tirna",
+    "name": "Tir na nOg",
+    "start_room": 20136,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "titan",
+    "name": "The Titans' Keep",
+    "start_room": 38234,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "tol",
+    "name": "The Tree of Life",
+    "start_room": 16325,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "tombs",
+    "name": "The Relinquished Tombs",
+    "start_room": 15385,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "umari",
+    "name": "Umari's Castle",
+    "start_room": 36601,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "underdark",
+    "name": "The UnderDark",
+    "start_room": 27341,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "uplanes",
+    "name": "The Upper Planes",
+    "start_room": 29364,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "uprising",
+    "name": "The Uprising",
+    "start_room": 15382,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "vale",
+    "name": "Sundered Vale",
+    "start_room": 1036,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "verdure",
+    "name": "Verdure Estate",
+    "start_room": 24090,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "verume",
+    "name": "Jungles of Verume",
+    "start_room": 30607,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "village",
+    "name": "A Peaceful Giant Village",
+    "start_room": 30850,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "vlad",
+    "name": "Castle Vlad-Shamir",
+    "start_room": 15970,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "volcano",
+    "name": "The Silver Volcano",
+    "start_room": 6091,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "weather",
+    "name": "Weather Observatory",
+    "start_room": 40499,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "werewood",
+    "name": "The Were Wood",
+    "start_room": 30956,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "wildwood",
+    "name": "Wildwood",
+    "start_room": 322,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "winter",
+    "name": "Winterlands",
+    "start_room": 1306,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "wizards",
+    "name": "War of the Wizards",
+    "start_room": 31316,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "wonders",
+    "name": "Seven Wonders",
+    "start_room": 32981,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "wooble",
+    "name": "The Wobbly Woes of Woobleville",
+    "start_room": 11335,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "woodelves",
+    "name": "The Wood Elves of Nalondir",
+    "start_room": 32199,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "wtc",
+    "name": "Warrior's Training Camp",
+    "start_room": 37895,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "wyrm",
+    "name": "The Council of the Wyrm",
+    "start_room": 28847,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "xmas",
+    "name": "Christmas Vacation",
+    "start_room": 6212,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "xylmos",
+    "name": "Xyl's Mosaic",
+    "start_room": 472,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "yarr",
+    "name": "The Misty Shores of Yarr",
+    "start_room": 30281,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "ygg",
+    "name": "Yggdrasil: The World Tree",
+    "start_room": 24186,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "yurgach",
+    "name": "The Yurgach Domain",
+    "start_room": 29450,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "zangar",
+    "name": "Zangar's Demonic Grotto",
+    "start_room": 6164,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "zenith",
+    "name": "An Auspicious Star's Zenith",
+    "start_room": 23681,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "zodiac",
+    "name": "Realm of the Zodiac",
+    "start_room": 15857,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "zoo",
+    "name": "Aardwolf Zoological Park",
+    "start_room": 5920,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "zyian",
+    "name": "The Dark Temple of Zyian",
+    "start_room": 729,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  },
+  {
+    "key": "manor1",
+    "name": "Death's Manor (1)",
+    "start_room": 14460,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "manor3",
+    "name": "Death's Manor (3)",
+    "start_room": 20836,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "manorisle",
+    "name": "Manor Isle",
+    "start_room": 6366,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "manormount",
+    "name": "Manor Mount",
+    "start_room": 39449,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "manorsea",
+    "name": "Manor Sea",
+    "start_room": 35003,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "manorville",
+    "name": "Manor Village",
+    "start_room": 35004,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "manorwoods",
+    "name": "Manor Woods",
+    "start_room": 35002,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "blackclaw",
+    "name": "Blackclaw",
+    "start_room": null,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "geniewish",
+    "name": "A Genie's Last Wish",
+    "start_room": 38464,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "icefall",
+    "name": "Icefall",
+    "start_room": 38701,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "inferno",
+    "name": "Inferno",
+    "start_room": null,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "oradrin",
+    "name": "Oradrin",
+    "start_room": 25436,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "transcend",
+    "name": "Transcendece",
+    "start_room": null,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "winds",
+    "name": "Winds of Fate",
+    "start_room": 39900,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "badtrip",
+    "name": "Bad Trip",
+    "start_room": 32877,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "birthday",
+    "name": "Birthday",
+    "start_room": 10920,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "seaking",
+    "name": "Seaking",
+    "start_room": null,
+    "noquest": true,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "vidblain": false
+  },
+  {
+    "key": "dungeon",
+    "name": "Bloodlust Dungeon",
+    "start_room": null,
+    "minlvl": 1,
+    "maxlvl": 201,
+    "noquest": false,
+    "vidblain": false
+  }
+]

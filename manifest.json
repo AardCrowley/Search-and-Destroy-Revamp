@@ -1,0 +1,105 @@
+{
+  "version": "6.0",
+  "files": [
+    {
+      "file": "constants.lua",
+      "hash": "f5bb4bd0",
+      "size": 9885
+    },
+    {
+      "file": "util.lua",
+      "hash": "f5307e30",
+      "size": 14535
+    },
+    {
+      "file": "db.lua",
+      "hash": "fd108d40",
+      "size": 35447
+    },
+    {
+      "file": "settings.lua",
+      "hash": "aa92df86",
+      "size": 13180
+    },
+    {
+      "file": "characters.lua",
+      "hash": "ed0e10a6",
+      "size": 7044
+    },
+    {
+      "file": "areas.lua",
+      "hash": "ab4b7432",
+      "size": 40684
+    },
+    {
+      "file": "mobs.lua",
+      "hash": "be0f679a",
+      "size": 21571
+    },
+    {
+      "file": "keywords.lua",
+      "hash": "7a1fa048",
+      "size": 13800
+    },
+    {
+      "file": "targets.lua",
+      "hash": "ac674938",
+      "size": 61037
+    },
+    {
+      "file": "pathing.lua",
+      "hash": "16b4132a",
+      "size": 51516
+    },
+    {
+      "file": "express.lua",
+      "hash": "c5d4c448",
+      "size": 2462
+    },
+    {
+      "file": "navigation.lua",
+      "hash": "df81217e",
+      "size": 49863
+    },
+    {
+      "file": "hunting.lua",
+      "hash": "0ab4c5de",
+      "size": 12271
+    },
+    {
+      "file": "scanning.lua",
+      "hash": "a28cdae2",
+      "size": 16071
+    },
+    {
+      "file": "history.lua",
+      "hash": "2efaf930",
+      "size": 38888
+    },
+    {
+      "file": "window.lua",
+      "hash": "4a3ac1b8",
+      "size": 55186
+    },
+    {
+      "file": "settings_popup.lua",
+      "hash": "96abcdf0",
+      "size": 23751
+    },
+    {
+      "file": "help.lua",
+      "hash": "674e4b00",
+      "size": 81210
+    },
+    {
+      "file": "changelog.lua",
+      "hash": "666011ea",
+      "size": 17827
+    },
+    {
+      "file": "seed_data.lua",
+      "hash": "24182530",
+      "size": 40706
+    }
+  ]
+}
