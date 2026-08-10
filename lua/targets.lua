@@ -554,6 +554,14 @@ function build_room_targets(cp_gq)
         -- nowhere-tagged mobs remain in the list; the tag only skips 'where'.
         if #possibilities > 0 then
             -- Check sightings: exact room match first, then area-wide.
+            --
+            -- The area-wide half used to be missing. Only the exact
+            -- (mob, room_name) query below existed, so when a mob had never
+            -- been seen in a room of that exact name, every candidate area was
+            -- ranked identically -- discarding the fact that we may well have
+            -- seen the mob elsewhere in one of them. An area you have met the
+            -- mob in is a far better guess than one you have never seen it in,
+            -- and that information was already sitting in mob_sightings.
             local mob_found = false
 
             for row in snddb:nrows(
@@ -579,6 +587,30 @@ function build_room_targets(cp_gq)
                 end
             end
 
+            -- Area-wide fallback: has this mob been seen anywhere in each
+            -- candidate area, regardless of room name? Only consulted when no
+            -- exact room sighting was found, since an exact match is strictly
+            -- better evidence and should not be diluted by it.
+            local area_seen = {}
+            if not mob_found then
+                for row in snddb:nrows(
+                    "SELECT ms.zone AS zone, SUM(ms.seen_count) AS seen " ..
+                    "FROM mob_sightings ms " ..
+                    "WHERE ms.mob=" .. fixsql(v.mob:lower()) ..
+                    " AND ms.zone IN (" .. table.concat(areas_sql, ",") .. ") " ..
+                    "GROUP BY ms.zone"
+                ) do
+                    area_seen[row.zone] = tonumber(row.seen) or 1
+                end
+                for _, p in ipairs(possibilities) do
+                    local n = area_seen[p.arid]
+                    if n then
+                        p.area_seen = n
+                        p.results   = p.results + 1
+                    end
+                end
+            end
+
             -- Deduplicate by (arid, roomName).
             local seen_keys = {}
             local deduped   = {}
@@ -591,6 +623,9 @@ function build_room_targets(cp_gq)
                     seen_keys[key].kills   = p.kills
                     seen_keys[key].results = p.results
                     seen_keys[key].roomid  = p.roomid
+                end
+                if p.area_seen and (seen_keys[key].area_seen or 0) < p.area_seen then
+                    seen_keys[key].area_seen = p.area_seen
                 end
             end
             possibilities = deduped
@@ -606,10 +641,35 @@ function build_room_targets(cp_gq)
                 for i, p in ipairs(tmp_high) do p.index = i;           high[#high+1] = p end
                 for i, p in ipairs(tmp_low)  do p.index = i+#tmp_high; low[#low+1]   = p end
             else
-                for i, p in ipairs(possibilities) do
-                    p.duplicates = #possibilities
-                    p.index      = i
-                    high[#high+1] = p
+                -- No exact room sighting. Areas we have actually met this mob
+                -- in rank above areas we have not; only when we have seen it
+                -- nowhere are all candidates genuinely equally likely.
+                local any_area_seen = false
+                for _, p in ipairs(possibilities) do
+                    if p.area_seen then any_area_seen = true break end
+                end
+
+                if any_area_seen then
+                    -- Most-seen area first, so the strongest guess leads.
+                    table.sort(possibilities, function(x, y)
+                        local sx, sy = x.area_seen or 0, y.area_seen or 0
+                        if sx ~= sy then return sx > sy end
+                        return area_sorter(x, y)
+                    end)
+                    local tmp_high, tmp_low = {}, {}
+                    for _, p in ipairs(possibilities) do
+                        p.duplicates = #possibilities
+                        if p.area_seen then tmp_high[#tmp_high+1] = p
+                        else p.unlikely = true; tmp_low[#tmp_low+1] = p end
+                    end
+                    for i, p in ipairs(tmp_high) do p.index = i;            high[#high+1] = p end
+                    for i, p in ipairs(tmp_low)  do p.index = i + #tmp_high; low[#low+1]   = p end
+                else
+                    for i, p in ipairs(possibilities) do
+                        p.duplicates = #possibilities
+                        p.index      = i
+                        high[#high+1] = p
+                    end
                 end
             end
 
@@ -1256,6 +1316,11 @@ end
 
 function gq_check_end()
     player_is_on_gq()
+    -- Every other assignment of current_activity is "cp" or "none" -- this one
+    -- was missing, so on a gquest it stayed "none" and every command that
+    -- guards on it refused to run. 'xcp' in particular aborted with "not on a
+    -- CP or GQ" while the gq target list sat fully populated beside it.
+    current_activity = "gq"
     build_main_target_list("gq", area_room_type)
     if type(xcp_retry) == "function" then xcp_retry() end
 end

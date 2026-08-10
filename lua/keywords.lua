@@ -328,8 +328,16 @@ function set_current_mob_keyword(keyword)
     end
 
     if not (type(current_target) == "table" and current_target.mob) then
-        InfoNote("SnD: 'kw' has no current target. " ..
-                 "Use 'xcp' first, or use 'xset kw' with no arguments.")
+        -- On a quest, "use xcp first" is a dead end: xcp only handles quest
+        -- targets when quest targeting is switched on, and it does not say so.
+        if type(has_active_quest) == "function" and has_active_quest() then
+            InfoNote("SnD: 'kw' has no current target. On a quest, use 'xqt' " ..
+                     "to target the quest mob first (or 'xcp q' to let 'xcp' " ..
+                     "do it).")
+        else
+            InfoNote("SnD: 'kw' has no current target. " ..
+                     "Use 'xcp' first, or use 'xset kw' with no arguments.")
+        end
         return
     end
 

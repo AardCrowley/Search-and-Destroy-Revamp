@@ -1151,20 +1151,59 @@ end
 -- ─── SHOW / HIDE ─────────────────────────────────────────────────────────────
 
 function xg_show_window()
+    -- WindowShow does nothing to a window that no longer exists, which is how
+    -- the window could vanish and refuse to come back: 'xset win on' called
+    -- WindowShow on a deleted handle, silently, and only 'xset winreset'
+    -- (which recreates it) had any effect. Rebuild it first if it is gone.
+    if not window_exists() then
+        xg_create_window()
+    end
     WindowShow(win, true)
     snd_set_setting("xgui_window_onoff", "on", false)
 end
 
 function xg_hide_window()
+    -- No existence guard: WindowShow on a deleted handle is already a no-op,
+    -- and a guard here would only make "hide" depend on module-local state
+    -- that nothing outside can observe.
     WindowShow(win, false)
     snd_set_setting("xgui_window_onoff", "off", false)
 end
 
 function xg_toggle_window()
-    if snd_get_setting("xgui_window_onoff", "on") == "on" then
+    -- A window that has been destroyed while the setting still says "on" must
+    -- come back, not toggle off.
+    if window_exists() and snd_get_setting("xgui_window_onoff", "on") == "on" then
         xg_hide_window()
     else
         xg_show_window()
+    end
+end
+
+-- Alias handler: 'xset win <on|off|show|hide|max|expand|min|collapse>'.
+--
+-- The alias captures that word, but it used to run xg_toggle_window(), which
+-- takes no arguments -- so every form simply flipped visibility. 'xset win on'
+-- could turn the window OFF, and the expand/collapse forms did nothing they
+-- claimed to.
+function xg_window_command(name, line, wildcards)
+    local w = (type(wildcards) == "table" and wildcards) or {}
+    local opt = tostring(w.onoff or w[1] or ""):lower()
+
+    if opt == "on" or opt == "show" or opt == "1" or opt == "true" then
+        xg_show_window()
+    elseif opt == "off" or opt == "hide" or opt == "0" or opt == "false" then
+        xg_hide_window()
+    elseif opt == "max" or opt == "maximize" or opt == "expand" then
+        snd_set_setting("list_display_mode", "expand", true)
+        InfoNote("SnD: target list auto-expands to fit.")
+        if window_exists() then xg_draw_window() end
+    elseif opt == "min" or opt == "minimize" or opt == "collapse" then
+        snd_set_setting("list_display_mode", "scroll", true)
+        InfoNote("SnD: target list stays a fixed height and scrolls.")
+        if window_exists() then xg_draw_window() end
+    else
+        xg_toggle_window()
     end
 end
 
@@ -1257,6 +1296,41 @@ function xg_create_window()
         { mouseup = snd_win_mouse_up },
         { x = DEFAULT_X, y = DEFAULT_Y }
     )
+
+    -- Drag the window back on-screen if its saved position is no longer on it.
+    --
+    -- movewindow restores an absolute position saved from a previous session,
+    -- and nothing checked it against the current desktop. A resolution change
+    -- while the client is running -- a monitor sleeping and waking, a laptop
+    -- undocking, a remote session resizing -- can leave those coordinates
+    -- outside the visible area, and the window is then invisible while very
+    -- much existing. The help has always named this ("if the window disappears
+    -- off-screen"), and offered 'xset winreset' as the cure, but nothing made
+    -- the cure reliable: recreating the window restores the same saved
+    -- coordinates.
+    --
+    -- A sliver is enough to count as visible, since a deliberately
+    -- part-offscreen window is a legitimate choice; only a window with nothing
+    -- left to grab is moved.
+    if windowinfo then
+        local EDGE = 40                       -- must remain grabbable
+        local left = tonumber(windowinfo.window_left) or 0
+        local top  = tonumber(windowinfo.window_top)  or 0
+        local off  = left > (_screen_w - EDGE)
+                  or top  > (_screen_h - EDGE)
+                  or left < (EDGE - _width)
+                  or top  < 0
+        if off then
+            windowinfo.window_left = DEFAULT_X
+            windowinfo.window_top  = DEFAULT_Y
+            if type(InfoNote) == "function" then
+                InfoNote("SnD: the window was off-screen (saved position ",
+                         tostring(left), ",", tostring(top),
+                         " on a ", tostring(_screen_w), "x", tostring(_screen_h),
+                         " desktop) -- moved it back.")
+            end
+        end
+    end
 
     WindowCreate(
         win,

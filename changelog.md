@@ -1,3 +1,90 @@
+# v6.0.1
+
+## Bug Fixes
+
+- **Fixed: the update banner never went away.**
+  Running `snd update` downloaded the modules, told you to reload, and then
+  announced the same update again on the next login.  The banner compares the
+  published `VERSION` against the version in the plugin file — and nothing
+  updated the plugin file.  `do_update()`, the only caller of the code that
+  replaces it, was never called from anywhere, so both `snd update` and
+  `snd force update` refreshed modules and nothing else.  A module update now
+  brings the plugin file itself up to date too.
+
+  The write is also checked before the plugin is reloaded — it used to reload
+  regardless, which on a failed write restarts the plugin expecting new code
+  and silently gets the old file back.
+
+- **Fixed: `xset win` ignored what you asked it to do.**
+  The alias accepts `on`, `off`, `show`, `hide`, `max`, `expand`, `min` and
+  `collapse`, but ran a handler that takes no arguments and simply flipped
+  visibility — so `xset win on` could turn the window **off**, and the
+  expand/collapse forms did nothing at all.  Each option now does what it says.
+
+- **Fixed: the miniwindow could go missing while you were away.**
+  Two independent causes, both of which leave you staring at a client with no
+  window:
+
+  *Reconnecting.*  Disconnecting tears the window down and nothing put it back,
+  so idling out and returning left no window.  It is now rebuilt on reconnect,
+  honouring your show/hide setting so a window you deliberately hid stays
+  hidden.
+
+  *A resolution change.*  The window's position is restored from a previous
+  session as absolute coordinates, and nothing checked them against the current
+  desktop.  A monitor sleeping and waking, a laptop undocking, or a remote
+  session resizing could leave the window parked outside the visible area —
+  present, but invisible.  Worse, `xset winreset` restored the same saved
+  coordinates, so the documented cure did not work either.  A window with
+  nothing left on-screen to grab is now moved back, and says so.  One left
+  deliberately half off the edge is untouched.
+
+- **Fixed: a vanished miniwindow would not come back.**
+  `xset win on` called `WindowShow` on the window handle, which does nothing
+  when the window has been deleted — leaving `xset winreset` as the only
+  command with any effect, because it is the only one that recreates it.
+  Showing the window now rebuilds it first if it has gone, and toggling a
+  window that has disappeared brings it back rather than recording another
+  "off".
+
+- **Clearer messages when you are on a quest.**
+  `xcp` answered "not on a CP or GQ" — true, but unhelpful when you are on a
+  quest and quest targeting is simply switched off, which nothing said.  Both
+  `xcp` and `kw` now point at `xcp q` and `xqt` instead.
+
+- **Fixed: `xcp` did nothing on a global quest.**
+  Every place that set `current_activity` set it to `"cp"` or `"none"` — the
+  gquest path set `player_on_gq` but never the activity — so on a GQ it stayed
+  `"none"`, and both `xcp` entry points abort on that with "not on a CP or GQ"
+  while the target list sat fully populated beside them.
+
+- **Fixed: area targets sent you to the area entrance from inside the area.**
+  When a target has no specific room to walk to, the plan is to hunt or `where`
+  from within its area — but the route was still measured to that area's start
+  room even when you were already standing in it.  In practice: two targets in
+  one area, kill the first, `cp check` finds no room route, and `xcp` walks you
+  back to the entrance.  Being in the target's area now costs 0 hops and moves
+  you nowhere.
+
+- **Fixed: room-name CP targets ignored what you had already seen.**
+  When a campaign target is given as a room name, S&D finds every room of that
+  name in the mapper and ranks the candidate areas.  It checked sightings for
+  an exact mob-and-room-name pair — and a comment above it claimed "exact room
+  match first, then area-wide", but the area-wide half was never written.  So
+  if you had never seen the mob in a room of that exact name, every candidate
+  area was ranked identically, discarding the fact that you may well have met
+  the mob elsewhere in one of them.
+
+  Areas where the mob has actually been seen now rank above areas where it has
+  not, ordered by how often, and areas with no sighting at all are marked
+  unlikely so routing leaves them for last.  An exact room sighting still wins
+  outright.  When the mob has been seen nowhere, every candidate stays equally
+  likely — guessing would be worse than admitting there is nothing to go on.
+
+  Reported by **Obyron**, who had hit the same class of bug in 5.99 from the
+  other direction: there the area-wide branch existed, but its condition could
+  never be false, so it never ran.
+
 # v6.0
 
 ## New Features

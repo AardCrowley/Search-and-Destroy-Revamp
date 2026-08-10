@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="iso-8859-1"?><!DOCTYPE muclient>
 <!-- Saved on Saturday, July 05, 2008, 4:46 PM -->
 <muclient>
-    <plugin version="6.0" name="Search_and_Destroy" id="30000000537461726C696E67" date_written="2018-12-31 23:00:00" author="Crowley" language="Lua" purpose="Safe, legal Search and Destroy" save_state="y" requires="4.90">
+    <plugin version="6.0.1" name="Search_and_Destroy" id="30000000537461726C696E67" date_written="2018-12-31 23:00:00" author="Crowley" language="Lua" purpose="Safe, legal Search and Destroy" save_state="y" requires="4.90">
         <description trim="n"></description>
     </plugin>
 
@@ -1676,6 +1676,22 @@ function OnPluginDisconnect()
     end
 end
 
+-- Rebuild the miniwindow after a reconnect.
+--
+-- OnPluginDisconnect tears the window down, and nothing put it back: idle out
+-- while away from the keyboard, come back, and the window is simply gone --
+-- with 'xset winreset' the only command that could restore it, because it was
+-- the only one that recreated rather than merely re-showed. Reported by a
+-- player who hit it repeatedly after stepping away.
+--
+-- xg_create_window honours the xgui_window_onoff setting when it finishes, so
+-- someone who had deliberately hidden the window stays hidden.
+function OnPluginConnect()
+    if type(xg_create_window) == "function" then
+        xg_create_window()
+    end
+end
+
 function set_speed(name, line, wildcards)
     if (wildcards.speed ~= "") then
         speed = wildcards.speed
@@ -1963,13 +1979,34 @@ function do_update(version)
     download_plugin("v" .. version, callback_update_plugin)
 end
 
+-- Fetch the published VERSION and, if it differs from the running plugin,
+-- replace the plugin file with that release's copy.
+--
+-- Called at the end of a module update. Version strings are compared as
+-- strings, never with tonumber(): tonumber("6.0.1") is nil, so anything with
+-- three parts would compare as "no version at all".
+function _snd_update_plugin_file_if_stale()
+    download_file(snd_raw_url("VERSION"), function(retval, page, status)
+        if status ~= 200 or not page then return end
+        local latest = Trim(page)
+        if latest == "" or latest == tostring(PLUGIN_VERSION) then return end
+        ColourNote("silver", "",
+            "SnD: Plugin file is v" .. tostring(PLUGIN_VERSION) ..
+            ", latest is v" .. latest .. " -- updating it too.")
+        do_update(latest)
+    end)
+end
+
 function callback_update_plugin(retval, page, status, headers, full_status, request_url)
     if status ~= 200 then
         DebugNote("callback_update_plugin got ", status)
         ErrorNote("Error while fetching latest plugin version")
         return
     end
-    local upstream_version = tonumber(string.match(page, '<plugin version="([0-9%.]+)"'))
+    -- A string, not tonumber(): tonumber("6.0.1") is nil, which would print
+    -- "updating to nil" and error outright when a beta tag is appended below.
+    local upstream_version = string.match(page, '<plugin version="([0-9%.]+)"')
+                             or "(unknown)"
     local pluginVer = PLUGIN_VERSION
     if prevBeta then
         pluginVer = pluginVer .. " (Beta " .. prevBeta .. ")"
@@ -1979,7 +2016,15 @@ function callback_update_plugin(retval, page, status, headers, full_status, requ
     end
 
     ImportantNote("Updating from version ", pluginVer, " to ", upstream_version, ". Do not touch anything!")
-    local file = io.open(GetPluginInfo(GetPluginID(), 6), "w")
+    -- Never reload on a write we could not make: that would restart the plugin
+    -- expecting new code and get the old file back, with no explanation.
+    local path = GetPluginInfo(GetPluginID(), 6)
+    local file = io.open(path, "w")
+    if not file then
+        ErrorNote("SnD: could not open the plugin file for writing: ", tostring(path))
+        ErrorNote("SnD: the update was not applied.")
+        return
+    end
     file:write(page)
     file:close()
     if "" == GetAlphaOption("script_prefix") then
@@ -3849,6 +3894,15 @@ function _snd_smart_update(force)
                         ColourNote("silver", "",
                             "SnD: Reload the plugin to apply updates.")
                     end
+
+                    -- Modules are only half the plugin. The version banner
+                    -- compares the published VERSION against PLUGIN_VERSION,
+                    -- which lives in the plugin XML -- and nothing updated
+                    -- that: do_update(), the only caller of download_plugin(),
+                    -- was never called from anywhere. So a user could run
+                    -- 'snd update', watch twenty modules download, reload, and
+                    -- still be told an update was available, forever.
+                    _snd_update_plugin_file_if_stale()
                 end
             end)
         end
@@ -3936,7 +3990,7 @@ local _snd_subroutines = {
     "trigger_campaign_rewards_practices", "trigger_campaign_rewards_qp", "trigger_campaign_rewards_tps", "trigger_campaign_rewards_trains",
     "trigger_damage_done", "trigger_quest_premonition", "trigger_receive_xp", "xcp_arg",
     "xcp_noarg", "xcp_set_action_mode", "xcp_toggle_quest_targeting", "xdb_clean",
-    "xg_create_window", "xg_toggle_window", "xmap_rooms_linking_here", "xmapper_move",
+    "xg_create_window", "xg_window_command", "xmap_rooms_linking_here", "xmapper_move",
     "xmark_list", "xmobdeaths_cmd", "xq_command", "xrt_noarg",
     "xrun_to_alias", "xset_area_delete", "xset_area_edit_difficulty", "xset_area_edit_lock",
     "xset_area_edit_max", "xset_area_edit_min", "xset_area_edit_name", "xset_area_edit_noquest",
@@ -4351,7 +4405,7 @@ end
 
         <alias match="^xset winreset$" script="xg_create_window" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
-        <alias match="^xset (?:window|win) (?<onoff>on|off|show|hide|0|1|true|false|max(?:imize)?|expand|min(?:imize)?|collapse)$" script="xg_toggle_window" enabled="y" regexp="y" sequence="100"></alias>
+        <alias match="^xset (?:window|win) (?<onoff>on|off|show|hide|0|1|true|false|max(?:imize)?|expand|min(?:imize)?|collapse)$" script="xg_window_command" enabled="y" regexp="y" sequence="100"></alias>
 
         <alias match="^(?:xw|xwh|xwhere)( (?<n1>\d+))?( (?<n2>\d+))?( (?<mob>.+))?$" script="do_xwhere" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 

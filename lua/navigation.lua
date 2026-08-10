@@ -667,7 +667,16 @@ function xcp_noarg()
     end
 
     if current_activity == "none" then
-        InfoNote("\nSnD: 'xcp' aborted — not on a CP or GQ.\n")
+        -- "not on a CP or GQ" is true but unhelpful when the player IS on a
+        -- quest: quest targeting is opt-in, and nothing said so. Point at the
+        -- switch rather than leaving them to guess why nothing works.
+        if type(has_active_quest) == "function" and has_active_quest() then
+            InfoNote("\nSnD: 'xcp' only handles quest targets when quest " ..
+                     "targeting is on. Use 'xcp q' to enable it, or 'xqt' to " ..
+                     "target the quest mob directly.\n")
+        else
+            InfoNote("\nSnD: 'xcp' aborted — not on a CP or GQ.\n")
+        end
         return
     end
     if #main_target_list == 0 then
@@ -690,7 +699,13 @@ end
 function xcp_arg(name, line, wildcards)
     local index = tonumber(wildcards.index)
     if current_activity == "none" then
-        InfoNote("\nSnD: 'xcp' aborted — not on a CP or GQ.\n")
+        if type(has_active_quest) == "function" and has_active_quest() then
+            InfoNote("\nSnD: 'xcp' only handles quest targets when quest " ..
+                     "targeting is on. Use 'xcp q' to enable it, or 'xqt' to " ..
+                     "target the quest mob directly.\n")
+        else
+            InfoNote("\nSnD: 'xcp' aborted — not on a CP or GQ.\n")
+        end
     elseif #main_target_list == 0 then
         InfoNote("\nSnD: 'xcp' aborted — target list is empty.\n")
     elseif not index or index < 0 or index > #main_target_list then

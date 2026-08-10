@@ -513,7 +513,7 @@ end
 -- Returns { room=<room hops were measured to>, arrive=<room the player ends
 -- up standing in>, hops=N, via="direct"|"rlink"|"area" }, or nil when even
 -- the area start room can't be resolved or reached.
-local function resolve_target(entry, from_room, snddb, mapdb, hops_fn, anchor_cache)
+local function resolve_target(entry, from_room, snddb, mapdb, hops_fn, anchor_cache, from_arid)
     local target_room = specific_target_room(entry, snddb, mapdb)
 
     if target_room and not is_maze_room(target_room) then
@@ -534,6 +534,19 @@ local function resolve_target(entry, from_room, snddb, mapdb, hops_fn, anchor_ca
     end
 
     local arid = entry.arid
+
+    -- Already standing in the target's area.
+    --
+    -- Reaching this tier means there is no specific room to walk to, so the
+    -- plan is "hunt or where from inside the area" -- and you are inside it.
+    -- Measuring to the area's start room from here is backwards: it charges
+    -- hops for a journey that should not happen, and on a multi-target area it
+    -- sends you back to the entrance after each kill. Checked before the
+    -- anchor lookup so it holds for areas with no start room configured too.
+    if arid and from_arid and from_arid == arid then
+        return { room = from_room, arrive = from_room, hops = 0, via = "area" }
+    end
+
     local start_room
     if arid then
         start_room = anchor_cache[arid]
@@ -630,6 +643,14 @@ function optimize_target_order(current_room)
 
     local cur_id = tonumber(current_room) or tonumber(gmcp("room.info.num")) or 0
 
+    -- The area the player is standing in, so a target whose only route is
+    -- "go to the area" can be recognised as already reached. GMCP is the
+    -- authority; current_room is a fallback for when it has not arrived yet.
+    local cur_arid = gmcp("room.info.zone")
+    if (not cur_arid or cur_arid == "") and type(current_room) == "table" then
+        cur_arid = current_room.arid
+    end
+
     snddb = db_open()
     mapdb = sqlite3.open(mapper_db_file)
 
@@ -691,7 +712,8 @@ function optimize_target_order(current_room)
         if entry.unlikely then
             unlikely_deferred[#unlikely_deferred + 1] = entry
         else
-            local res = resolve_target(entry, cur_id, snddb, mapdb, hops, anchor_cache)
+            local res = resolve_target(entry, cur_id, snddb, mapdb, hops,
+                                       anchor_cache, cur_arid)
             if res then
                 routable[#routable + 1] = {
                     entry      = entry,
