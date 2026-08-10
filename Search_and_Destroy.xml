@@ -1886,14 +1886,58 @@ function download_version_file(callback, log_no_updates)
     download_file(url, check_version_callback(callback, log_no_updates))
 end
 
+-- ─── ASYNC REQUESTS ───────────────────────────────────────────────────────────
+--
+-- One place that loads the async library and issues a request. There were three
+-- copies of the require before this, each with its own idea of the third
+-- argument, and download_file guarded on a GLOBAL async_ok that nothing ever
+-- assigned -- the other two copies declared it `local`. So download_file always
+-- took its else branch: the changelog, the version check and the plugin
+-- download all reported "Error on file download" without ever trying.
+--
+-- The third argument has meant different things across package versions.
+-- Current async.lua treats it as the protocol, asserts it is HTTP or HTTPS, and
+-- infers it from the URL when omitted. Older copies treat it as the HTTP verb
+-- and assert on GET/POST/HEAD, so omitting it fails there instead. No single
+-- value is right for both, so the modern form is tried first and the older one
+-- used if it raises. Both assert before issuing a request, so a rejected call
+-- leaves nothing behind.
+local _snd_async_mod = nil
+
+function snd_async()
+    if _snd_async_mod then return _snd_async_mod end
+    local ok, mod = pcall(require, "async")
+    if not ok then return nil, tostring(mod) end
+    _snd_async_mod = mod
+    async = mod        -- legacy global, still read elsewhere
+    return mod
+end
+
+function snd_http_get(url, callback)
+    local a, err = snd_async()
+    if not a then
+        ErrorNote("SnD: the 'async' library is not available: ", tostring(err))
+        return false
+    end
+    if type(url) ~= "string" or not url:lower():match("^https?://") then
+        ErrorNote("SnD: refusing to fetch a malformed URL: ", tostring(url))
+        return false
+    end
+
+    local ok = pcall(a.doAsyncRemoteRequest, url, callback)
+    if not ok then
+        ok = pcall(a.doAsyncRemoteRequest, url, callback, "GET")
+    end
+    if not ok then
+        ErrorNote("SnD: could not start a download of ", url)
+        return false
+    end
+    return true
+end
+
 function download_file(url, callback)
     DebugNote("Starting download of ", url)
-
-    if async_ok then
-        plugin_page = async.doAsyncRemoteRequest(url, callback, "HTTPS")
-    else
-        ImportantNote("Error on file download")
-    end
+    snd_http_get(url, callback)
 end
 
 function check_version_callback(callback, log_no_updates)
@@ -3344,9 +3388,7 @@ function _snd_bootstrap(on_complete)
     end
 
     -- Need downloads. Require async library.
-    local async_ok
-    async_ok, async = pcall(require, "async")
-    if not async_ok then
+    if not snd_async() then
         ColourNote("white", "red",
             "SnD: 'async' library not available. Cannot download modules.")
         ColourNote("white", "red",
@@ -3362,7 +3404,7 @@ function _snd_bootstrap(on_complete)
     for _, filename in ipairs(needed) do
         local fname = filename  -- capture for closure
         local url   = snd_raw_url("lua/" .. fname)
-        async.doAsyncRemoteRequest(url, function(retval, page, status)
+        snd_http_get(url, function(retval, page, status)
             completed = completed + 1
             if status == 200 and page and #page > 0 then
                 if _snd_write_file(_snd_prod_base .. fname, page) then
@@ -3390,7 +3432,7 @@ function _snd_bootstrap(on_complete)
                 _snd_run_seed()
                 on_complete()
             end
-        end, "GET")
+        end)
     end
 end
 
@@ -3659,9 +3701,7 @@ end
 --       untouched and the reason is reported.
 -- force=true: skip conflict detection; always overwrite (still backs up first).
 function _snd_smart_update(force)
-    local async_ok
-    async_ok, async = pcall(require, "async")
-    if not async_ok then
+    if not snd_async() then
         ColourNote("white", "red", "SnD: 'async' library not available.")
         return
     end
@@ -3673,7 +3713,7 @@ function _snd_smart_update(force)
 
     ColourNote("silver", "", "SnD: Checking for updates...")
 
-    async.doAsyncRemoteRequest(snd_raw_url("manifest.json"),
+    snd_http_get(snd_raw_url("manifest.json"),
     function(retval, page, status)
         if status ~= 200 or not page or #page == 0 then
             ColourNote("white", "darkred",
@@ -3725,7 +3765,7 @@ function _snd_smart_update(force)
 
         for _, entry in ipairs(to_download) do
             local fname = entry.file
-            async.doAsyncRemoteRequest(snd_raw_url("lua/" .. fname),
+            snd_http_get(snd_raw_url("lua/" .. fname),
             function(r, content, s)
                 completed = completed + 1
 
@@ -3810,9 +3850,9 @@ function _snd_smart_update(force)
                             "SnD: Reload the plugin to apply updates.")
                     end
                 end
-            end, "GET")
+            end)
         end
-    end, "GET")
+    end)
 end
 
 -- ─── ALIAS HANDLERS ───────────────────────────────────────────────────────────

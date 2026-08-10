@@ -758,6 +758,22 @@
 
 ### Plugin Updates
 
+- **Fixed: `snd changelog`, the version check and the plugin download never
+  even tried.**  `download_file` guarded on a global `async_ok`, but the only
+  places that variable was ever assigned declared it `local` inside another
+  function.  The global stayed `nil`, so every call took the failure branch and
+  printed "Error on file download" without contacting anything.
+
+- **Fixed: `snd update` died on an assertion inside the async library.**
+  The third argument to `doAsyncRemoteRequest` means different things in
+  different versions of the Aardwolf package — the current one treats it as the
+  protocol and infers it from the URL when omitted, while older copies treat it
+  as the HTTP verb and reject a missing one.  The module bootstrap passed
+  `"GET"` and worked; the update path passed nothing and raised, which only
+  surfaced once the manifest URL was fixed and the request was actually
+  attempted.  All downloads now go through one helper that tries the modern
+  form and falls back to the older one, so either version of the package works.
+
 - **Releases now ship the plugin's modules.**
   The archive contains `Search_and_Destroy.xml`, `sounds/` and `snd_modules/`,
   so a fresh install has working code the moment it is added — no waiting on a

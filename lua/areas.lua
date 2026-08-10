@@ -620,7 +620,9 @@ function fetch_areas_if_empty()
     end
     local url = areas_json_url()
     if not url then return end
-    async.doAsyncRemoteRequest(url, "areas_json_received", "GET")
+    -- snd_http_get (XML preamble) owns loading async and picking the third
+    -- argument, which has meant different things across package versions.
+    snd_http_get(url, "areas_json_received")
 end
 
 -- Callback fired by MUSHclient when the areas.json async request completes.
