@@ -157,12 +157,12 @@ plugin downloads and loads on demand.
 
 The changes users notice most:
 
-* **Route optimization.** A travelling-salesman solver plans the order to visit
+* **Route optimization.** A traveling-salesman solver plans the order to visit
   your campaign targets in, using real room-distance data from the mapper
   rather than guessing. You can rate areas — and individual mobs — by how
   awkward they are to *reach*, and the route respects that.
 * **A themed, tabbed miniwindow.** Quest, campaign, and global-quest targets
-  each get a tab. It follows the Aardwolf package's colour scheme and
+  each get a tab. It follows the Aardwolf package's color scheme and
   participates in the layout-lock and z-order systems.
 * **Everything persists in a database.** Marks, area records, mob flags,
   keywords, campaign history and per-level statistics live in `SnDdb.db`

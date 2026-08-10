@@ -27,7 +27,7 @@
 
   *Reconnecting.*  Disconnecting tears the window down and nothing put it back,
   so idling out and returning left no window.  It is now rebuilt on reconnect,
-  honouring your show/hide setting so a window you deliberately hid stays
+  honoring your show/hide setting so a window you deliberately hid stays
   hidden.
 
   *A resolution change.*  The window's position is restored from a previous
@@ -564,10 +564,10 @@
   that crosses chunks.  A sweep of every module local referenced from the XML
   confirmed this was the only such case.
 
-- **The alternating row colour matched in one place and not the other.**
+- **The alternating row color matched in one place and not the other.**
   `color_alternating_row` was read with a default of `#0C0C1A` by the miniwindow
   and the settings popup, but `#000040` by the MUD-side target list — so until
-  you set it explicitly, the same setting rendered two different colours
+  you set it explicitly, the same setting rendered two different colors
   depending on where you looked.  All four sites now use the value the settings
   popup declares.
 

@@ -13,7 +13,7 @@
     },
     {
       "file": "db.lua",
-      "hash": "fd108d40",
+      "hash": "7f4e4498",
       "size": 35447
     },
     {
@@ -48,8 +48,8 @@
     },
     {
       "file": "pathing.lua",
-      "hash": "5e6a8fa0",
-      "size": 52632
+      "hash": "65f79590",
+      "size": 52631
     },
     {
       "file": "express.lua",
@@ -58,13 +58,13 @@
     },
     {
       "file": "navigation.lua",
-      "hash": "910028d2",
-      "size": 50734
+      "hash": "0357cdd0",
+      "size": 50733
     },
     {
       "file": "hunting.lua",
-      "hash": "0ab4c5de",
-      "size": 12271
+      "hash": "1b6de368",
+      "size": 12269
     },
     {
       "file": "scanning.lua",
@@ -88,13 +88,13 @@
     },
     {
       "file": "help.lua",
-      "hash": "674e4b00",
-      "size": 81210
+      "hash": "4f0eebe0",
+      "size": 81209
     },
     {
       "file": "changelog.lua",
-      "hash": "666011ea",
-      "size": 17827
+      "hash": "1f1e5ef8",
+      "size": 17823
     },
     {
       "file": "seed_data.lua",

@@ -655,7 +655,7 @@ end
 
 function auto_hunt_abort()
     auto_hunt_reset()
-    InfoNote("Search and Destroy:  Auto-hunt cancelled.\n")
+    InfoNote("Search and Destroy:  Auto-hunt canceled.\n")
 end
 
 function auto_hunt_complete()
@@ -1684,7 +1684,7 @@ end
 -- the only one that recreated rather than merely re-showed. Reported by a
 -- player who hit it repeatedly after stepping away.
 --
--- xg_create_window honours the xgui_window_onoff setting when it finishes, so
+-- xg_create_window honors the xgui_window_onoff setting when it finishes, so
 -- someone who had deliberately hidden the window stays hidden.
 function OnPluginConnect()
     if type(xg_create_window) == "function" then

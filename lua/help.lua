@@ -337,7 +337,7 @@ local TOPICS = {
         summary  = "Perform the 'hunt trick' for your current target or a named mob.",
         sections = {
             {
-                text = "Executes the hunt trick on your current campaign target, or on the mob name supplied as an argument.  The hunt trick uses successive 'hunt' commands to move towards the mob.  Type 'ht stop' to abort — note that this may not work if the mob has a keyword of 'stop'.",
+                text = "Executes the hunt trick on your current campaign target, or on the mob name supplied as an argument.  The hunt trick uses successive 'hunt' commands to move toward the mob.  Type 'ht stop' to abort — note that this may not work if the mob has a keyword of 'stop'.",
             },
         },
         see_also = { "ah|aha", "qw", "xcp mode" },

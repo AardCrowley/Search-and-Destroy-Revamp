@@ -296,7 +296,7 @@ end
 -- Portals (fromuid='*') and recalls (fromuid='**') are stored by the mapper as
 -- "usable from anywhere". No real room exits TO them, so they never enter the
 -- frontier normally; their destinations are seeded at depth 1 and their own
--- neighbours are only expanded with the depth-2 wave, so rooms behind a
+-- neighbors are only expanded with the depth-2 wave, so rooms behind a
 -- portal are not credited one hop short.
 --
 -- stop_rooms (optional): a single room or a list. The search ends as soon as
@@ -505,8 +505,8 @@ end
 --      the entrance itself is a normal, stable room; only rooms *behind* it
 --      shuffle.
 --
--- hops_fn(a, b) is the memoised hop-count lookup shared by the caller.
--- anchor_cache memoises area_anchor_room() per arid across every target in
+-- hops_fn(a, b) is the memoized hop-count lookup shared by the caller.
+-- anchor_cache memoizes area_anchor_room() per arid across every target in
 -- the same optimize_target_order() call, since many targets typically share
 -- an area.
 --

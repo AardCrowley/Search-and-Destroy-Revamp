@@ -94,7 +94,7 @@ end
 -- ─── RENDERING ───────────────────────────────────────────────────────────────
 
 -- Markdown emphasis has no inline equivalent in a MUD output window, so the
--- markers are removed and colour carries the emphasis instead.  Links keep
+-- markers are removed and color carries the emphasis instead.  Links keep
 -- their text and drop the URL.
 local function strip_inline(s)
     s = s:gsub("%[([^%]]*)%]%([^%)]*%)", "%1")
@@ -108,7 +108,7 @@ local function strip_inline(s)
 end
 
 -- Greedy wrap. Unlike helpWrap this returns a table and accepts a narrower
--- budget for the first line, so text can continue after a coloured lead-in
+-- budget for the first line, so text can continue after a colored lead-in
 -- without the first line running past the column.
 local function wrap_lines(text, width, first_width)
     first_width = first_width or width
@@ -226,7 +226,7 @@ end
 
 -- ─── BLOCK RENDERING ─────────────────────────────────────────────────────────
 
--- A bullet very often opens with a bolded feature name; colouring that lead-in
+-- A bullet very often opens with a bolded feature name; coloring that lead-in
 -- is what makes a long changelog skimmable.
 local function split_lead(text)
     local title, tail = text:match("^%*%*(.-)%*%*(.*)$")
@@ -241,7 +241,7 @@ local function split_lead(text)
 end
 
 -- Emit one run of prose: `prefix` opens the first line, `hang` indents the
--- rest, and a bolded lead-in is coloured.  When that lead-in is long enough
+-- rest, and a bolded lead-in is colored.  When that lead-in is long enough
 -- that little of the first line is left, the body starts on the next line
 -- instead of being crammed past the column.
 local function emit_text(prefix, hang, text)

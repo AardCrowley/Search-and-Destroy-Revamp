@@ -26,7 +26,7 @@ _go_link_far_roomid  = nil   -- actual target room (behind the link)
 _go_link_far_arid    = nil   -- area key of the target room
 
 -- State tables for timer-driven execute-in-area/room/vidblain loops.
---   i = ticks spent travelling (still not at the destination)
+--   i = ticks spent traveling (still not at the destination)
 --   j = consecutive ticks the character has been settled and ready
 --   k = ticks spent AT the destination without ever settling
 execute_in_area_tbl  = {i=0, j=0, k=0, arid="",  f=function() end, stat=1}

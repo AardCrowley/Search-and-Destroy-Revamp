@@ -768,7 +768,7 @@ end
 -- ─── PLUGIN INIT ──────────────────────────────────────────────────────────────
 
 -- Called by the bootstrap loader after all modules have been dofile()'d.
--- This is the real plugin initialisation sequence.
+-- This is the real plugin initialization sequence.
 function init_plugin_after_load()
     -- 0. Record the session start time for snd summary.
     snd_session_start = os.time()

@@ -269,10 +269,10 @@ function ht_fail()
     end
 end
 
--- Trigger: 'abort' or similar cancelled hunt.
+-- Trigger: 'abort' or similar canceled hunt.
 function ht_abort(name, line, wildcards)
     ht_reset()
-    InfoNote("SnD: Hunt trick cancelled.")
+    InfoNote("SnD: Hunt trick canceled.")
 end
 
 -- ─── QUICK SCAN / QUICK KILL / SMART SCAN ────────────────────────────────────
