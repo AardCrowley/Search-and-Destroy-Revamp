@@ -758,6 +758,42 @@
 
 ### Plugin Updates
 
+- **Releases now ship the plugin's modules.**
+  The archive contains `Search_and_Destroy.xml`, `sounds/` and `snd_modules/`,
+  so a fresh install has working code the moment it is added — no waiting on a
+  download before anything can run.  One-time files stay out of it:
+  `seed_data.lua` runs once and deletes itself, and `areas.json` is fetched
+  only when the areas table is empty, so shipping either would put a file in
+  the archive that is stale as soon as it is used.
+
+  `snd_modules/` beside the plugin is also where `snd update` writes, so a
+  shipped install updates in place.  The folder is deliberately not called
+  `lua/`: that name collides with the personal script folders people keep next
+  to their plugins, and it is the path the plugin reserves for a development
+  checkout.  Installs from the previous layout still find their modules and
+  migrate on the next update.
+
+- **Fixed: a fresh install opened with a wall of errors.**
+  MUSHclient validates every trigger's and alias's script name the moment the
+  plugin's script block finishes — before the plugin has had a chance to
+  download anything.  On a first install the 81 functions the modules define
+  did not exist yet, so a new user's first sight of S&D was around a hundred
+  `subroutine could not be found` errors.  The plugin then downloaded its
+  modules and worked fine, which made it worse: the errors were
+  indistinguishable from a real failure.  The script block now declares a
+  placeholder for any name that is not already defined, and loading the modules
+  replaces them.
+
+- **Fixed: your own `lua` folder could shadow the plugin's modules.**
+  `<plugin>/lua/` was preferred over downloaded modules unconditionally.  S&D's
+  module names — `util.lua`, `constants.lua`, `settings.lua`, `db.lua`,
+  `window.lua`, `help.lua` — are exactly what a personal script folder tends to
+  contain, so anyone keeping their own scripts beside their plugins could have
+  their `util.lua` loaded in place of S&D's, failing in ways that look nothing
+  like the cause.  That folder is now used only when it contains a `.dev`
+  marker file.  If S&D modules are found there without one, it says so once
+  rather than silently ignoring them.
+
 - **The plugin now says when its modules cannot update.**
   `<plugin>/lua/` is the bootstrap's developer path: modules found there are
   loaded in preference to downloaded ones, and the updater deliberately never

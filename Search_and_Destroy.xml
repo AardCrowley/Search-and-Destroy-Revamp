@@ -3124,7 +3124,20 @@ end
 -- ─── PATHS & CONSTANTS ────────────────────────────────────────────────────────
 
 -- Production module folder (created on first download).
-local _snd_prod_base = GetInfo(60) .. "snd_modules/"
+-- Modules ship with the release, in snd_modules/ beside the plugin, and that
+-- is also where updates are written -- so a shipped install updates in place
+-- rather than being pinned.
+--
+-- The folder is deliberately NOT called lua/. Our module basenames are
+-- util.lua, constants.lua, settings.lua, db.lua, window.lua and help.lua,
+-- which is exactly what a personal script folder next to a plugin contains;
+-- a generic name there means someone else's util.lua can be loaded instead of
+-- ours.
+local _snd_prod_base = GetPluginInfo(GetPluginID(), 20) .. "snd_modules/"
+
+-- Where releases before this one put them. Read-only: an existing install
+-- keeps working and migrates to the new location on its next update.
+local _snd_legacy_base = GetInfo(60) .. "snd_modules/"
 -- Dev override: lua/ folder next to the XML file.
 local _snd_dev_base  = GetPluginInfo(GetPluginID(), 20) .. "lua/"
 -- Remote module source is derived from SND_RAW_URL in the preamble above, so
@@ -3163,11 +3176,34 @@ end
 
 -- Resolve the path to use for a module filename.
 -- Dev path wins over prod path; returns nil if neither exists.
+-- The dev path is opt-in, and deliberately so.
+--
+-- _snd_dev_base is <plugin>/lua/, which is only a sensible module source when
+-- that folder is a checkout of this project. Plenty of people keep their own
+-- scripts next to their plugins, and our module names -- util.lua,
+-- constants.lua, settings.lua, db.lua, window.lua, help.lua -- are exactly the
+-- names a personal script folder uses. Preferring that folder unconditionally
+-- meant someone else's util.lua could be loaded in place of ours, which fails
+-- in ways that look nothing like the cause.
+--
+-- Extracting the source zip into a plugins folder had the same shape, with a
+-- different symptom: the updater never replaces files found on the dev path,
+-- so every module would be pinned forever while the plugin itself updated.
+--
+-- An empty file named ".dev" in that folder turns it back on. It is gitignored
+-- rather than committed on purpose -- shipping it would re-enable the dev path
+-- for everyone who downloads the source.
+local _snd_dev_enabled = _snd_file_exists(_snd_dev_base .. ".dev")
+
 local function _snd_resolve(filename)
-    local dev = _snd_dev_base  .. filename
+    if _snd_dev_enabled then
+        local dev = _snd_dev_base .. filename
+        if _snd_file_exists(dev) then return dev end
+    end
     local prd = _snd_prod_base .. filename
-    if _snd_file_exists(dev) then return dev end
     if _snd_file_exists(prd) then return prd end
+    local legacy = _snd_legacy_base .. filename
+    if _snd_file_exists(legacy) then return legacy end
     return nil
 end
 
@@ -3224,45 +3260,31 @@ local function _snd_load_modules()
     end
 end
 
--- Warn when modules are being served from the plugin's own lua/ folder.
+-- Point out S&D modules sitting in the plugin's lua/ folder that are being
+-- ignored, so "I edited the file and nothing changed" has an answer.
 --
--- That folder is the "dev path": _snd_resolve prefers it, and the updater
--- deliberately never touches anything found there, so a developer's working
--- copy is not clobbered. The catch is that a user who downloads the whole
--- repository as a zip and extracts it into their plugins folder gets exactly
--- the same layout -- and then every module is pinned forever while the plugin
--- XML keeps updating normally, leaving a new XML beside stale modules. That
--- used to happen in complete silence.
---
--- A developer opts out by creating an empty file named ".dev" in that folder.
--- The marker is deliberately NOT in the repository: if it shipped, the source
--- zip would carry it and suppress the very warning it exists to allow.
+-- Only fires when the dev path is off, since with it on the files are being
+-- used and there is nothing to report.
 local function _snd_warn_if_dev_path()
-    local using_dev = false
+    if _snd_dev_enabled then return end
+
+    local found = false
     for _, fname in ipairs(_snd_modules) do
         if _snd_file_exists(_snd_dev_base .. fname) then
-            using_dev = true
+            found = true
             break
         end
     end
-    if not using_dev then return end
-    if _snd_file_exists(_snd_dev_base .. ".dev") then return end
+    if not found then return end
 
-    ColourNote("white", "darkred",
-        "SnD: modules are loading from " .. _snd_dev_base)
-    ColourNote("white", "darkred",
-        "SnD: files there are treated as a developer copy -- 'snd update' " ..
-        "will never replace them,")
-    ColourNote("white", "darkred",
-        "SnD: so you would keep old modules while the plugin itself updates.")
     ColourNote("silver", "",
-        "SnD: If you extracted the whole repository, delete that lua folder " ..
-        "and reload. The")
+        "SnD: found S&D modules in " .. _snd_dev_base .. " and ignored them.")
     ColourNote("silver", "",
-        "SnD: plugin downloads its own modules. If this is intentional, " ..
-        "create an empty")
+        "SnD: the plugin uses its own downloaded copies, which is what keeps " ..
+        "'snd update' working.")
     ColourNote("silver", "",
-        "SnD: file named .dev inside it to silence this.")
+        "SnD: if you meant to develop against those files, create an empty " ..
+        "file named .dev beside them.")
 end
 
 -- ─── SEED DATA ────────────────────────────────────────────────────────────────
@@ -3558,6 +3580,17 @@ local function _snd_apply_update(fname, new_content, force)
         return "new"
     end
 
+    -- A file we never downloaded -- no recorded hash, no .orig baseline -- came
+    -- with the release. Treating it as a user edit would send every shipped
+    -- module through the merge path on the first update, leaving a .backup
+    -- beside each one and reporting local changes nobody made.
+    if stored_hash == "" and not _snd_file_exists(orig_path) then
+        local chunk, err = loadstring(new_content)
+        if not chunk then return "download-invalid", err end
+        if not commit(new_content) then return "write-error" end
+        return "updated"
+    end
+
     local local_hash = _snd_fnv1a(local_content)
     local user_has_changes = (local_hash ~= stored_hash)
 
@@ -3659,8 +3692,15 @@ function _snd_smart_update(force)
 
         for _, entry in ipairs(manifest.files) do
             local fname = entry.file
-            -- Never touch files served from the dev path.
-            if not _snd_file_exists(_snd_dev_base .. fname) then
+            -- seed_data.lua deletes itself once it has run. Without this it
+            -- looks permanently missing and is re-downloaded on every check.
+            local spent = (fname == "seed_data.lua")
+                          and snd_get_setting
+                          and snd_get_setting("seed_data_applied", "") ~= ""
+
+            -- Never touch files served from the dev path, when it is in use.
+            if not spent
+            and not (_snd_dev_enabled and _snd_file_exists(_snd_dev_base .. fname)) then
                 local stored_hash  = GetVariable("_snd_dlhash_" .. fname) or ""
                 local remote_hash  = entry.hash
                 local prod_missing = not _snd_file_exists(_snd_prod_base .. fname)
@@ -3806,6 +3846,90 @@ do
         _snd_load_modules()
         _snd_warn_if_dev_path()
         _snd_modules_loaded = true
+    end
+end
+
+-- ─── SUBROUTINE STUBS ─────────────────────────────────────────────────────────
+--
+-- MUSHclient validates every trigger and alias `script=` name immediately after
+-- this block runs, and before OnPluginInstall fires.  On a fresh install the
+-- modules have not been downloaded yet, so none of the functions they define
+-- exist, and the user's first sight of the plugin is around a hundred
+-- "subroutine could not be found" errors -- before anything has actually gone
+-- wrong.  The plugin then downloads its modules and works fine, which makes
+-- the errors worse rather than better: they are indistinguishable from a real
+-- failure, and they are what a new user sees first.
+--
+-- Declaring a no-op for any name that is not already defined satisfies the
+-- validator.  This deliberately runs AFTER the eager load above and only fills
+-- in names that are still missing, so a real implementation is never replaced
+-- by a stub; loading the modules later overwrites the stubs in turn.
+--
+-- tests/subroutine_stubs_test.lua rebuilds this list from the trigger and alias
+-- definitions and fails if the two drift apart.
+local _snd_subroutines = {
+    "ExecSql", "RunSql", "alias_print_history", "alias_print_stats",
+    "alias_session_summary", "anex_automatic_off", "anex_automatic_on", "anex_mobdeath_xp1",
+    "auto_hunt", "auto_hunt_abort", "auto_hunt_complete", "auto_hunt_door",
+    "auto_hunt_door_open", "auto_hunt_lowskill", "auto_hunt_next", "auto_hunt_noarg",
+    "auto_hunt_portal", "changelog_since", "consider_end", "consider_mob_line",
+    "consider_unkillable", "copyPwarDB", "copyPwarWarn", "cp_check_can_get_new_cp",
+    "cp_check_cannot_get_new_cp", "cp_mob_killed", "do_cp_check", "do_cp_complete",
+    "do_cp_info", "do_cp_quit", "do_gq_check", "do_gq_info",
+    "do_xwhere", "echo_gqid_joined", "goto_next", "goto_number",
+    "goto_previous", "gq_check_not_yet_started", "gq_end_failed", "gq_ended",
+    "gq_mob_killed", "gq_quit_handler", "gqmsg_completed_other", "gqmsg_declared",
+    "gqmsg_extended_time", "gqmsg_joined", "gqmsg_started", "gqmsg_winner",
+    "ht_abort", "ht_arg", "ht_complete", "ht_continue",
+    "ht_fail", "ht_noarg", "map_area", "map_area_all",
+    "mobGo", "mobdeaths_trigger_end", "mobdeaths_trigger_line", "mobdeaths_trigger_start",
+    "onHelp", "onSearch", "player_level_up", "player_not_on_cp",
+    "player_not_on_gq", "player_start_new_cp", "quick_kill", "quick_scan",
+    "qw_area_too_complex", "qw_arg_alias", "qw_exact", "qw_match",
+    "qw_no_match", "qw_noarg", "retarget_quest", "room_note",
+    "room_note_area", "room_note_room", "roomchars", "roomchars_end",
+    "roomchars_start", "scan_door_nearby", "scan_empty", "scan_end",
+    "scan_location_current_room", "scan_location_nearby_room", "scan_mob", "scan_start",
+    "set_current_mob_keyword", "set_mob_keyword", "set_speed", "simulate_cp",
+    "simulate_quest", "sndReload", "snd_debug_cmd", "sp_toggle",
+    "spoof_level", "toggle_automatic_update_checking", "trigger_campaign_rewards_bonus_qp", "trigger_campaign_rewards_gold",
+    "trigger_campaign_rewards_practices", "trigger_campaign_rewards_qp", "trigger_campaign_rewards_tps", "trigger_campaign_rewards_trains",
+    "trigger_damage_done", "trigger_quest_premonition", "trigger_receive_xp", "xcp_arg",
+    "xcp_noarg", "xcp_set_action_mode", "xcp_toggle_quest_targeting", "xdb_clean",
+    "xg_create_window", "xg_toggle_window", "xmap_rooms_linking_here", "xmapper_move",
+    "xmark_list", "xmobdeaths_cmd", "xq_command", "xrt_noarg",
+    "xrun_to_alias", "xset_area_delete", "xset_area_edit_difficulty", "xset_area_edit_lock",
+    "xset_area_edit_max", "xset_area_edit_min", "xset_area_edit_name", "xset_area_edit_noquest",
+    "xset_area_edit_start", "xset_area_edit_vidblain", "xset_area_list", "xset_area_list_unset",
+    "xset_autonav", "xset_con_overwrite", "xset_debug", "xset_express",
+    "xset_gqalias", "xset_import_area_vars", "xset_index_areas", "xset_level_area",
+    "xset_level_area_reset", "xset_level_buffer", "xset_mark_current", "xset_mark_set",
+    "xset_marks_delete", "xset_marks_edit", "xset_marks_list", "xset_marks_search",
+    "xset_maze", "xset_maze_delete", "xset_maze_list", "xset_mob_clearflags",
+    "xset_mob_difficulty", "xset_mob_express", "xset_mob_levelok", "xset_mob_noaction",
+    "xset_mob_nohunt", "xset_mob_noscan", "xset_mob_nowhere", "xset_mob_priority",
+    "xset_mob_tags", "xset_mob_unpriority", "xset_noexp_tnl", "xset_nx",
+    "xset_nx_check", "xset_pathing", "xset_pathing_express", "xset_quick_kill_command",
+    "xset_rlink", "xset_silent_mode", "xset_snd_force_update", "xset_snd_update",
+    "xset_sound", "xset_table_notes", "xset_table_width", "xset_to_mark",
+    "xset_vidblain", "xset_vidblain_setlevel", "xtest_areadata", "xtest_debug",
+    "xtest_debug_gquest", "xtest_gq_end", "xtest_gq_join", "xtest_gq_kill",
+    "xtest_gq_lose", "xtest_gq_quit", "xtest_gq_start", "xtest_gq_waiting",
+    "xtest_gq_win", "xtest_loadroom", "xtest_mcvars", "xtest_popmsg",
+    "xtest_print_target", "xtest_roomhist", "xtest_set_qt", "xtest_xcp",
+}
+
+local _snd_stub_notified = false
+local function _snd_not_ready()
+    if _snd_stub_notified then return end
+    _snd_stub_notified = true
+    ColourNote("silver", "",
+        "SnD: still setting up for the first time -- try that again shortly.")
+end
+
+for _, _snd_name in ipairs(_snd_subroutines) do
+    if type(rawget(_G, _snd_name)) ~= "function" then
+        _G[_snd_name] = _snd_not_ready
     end
 end
 	]]>

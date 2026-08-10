@@ -59,32 +59,37 @@ be made in the future.
 * **MUSHclient 4.90 or later**, with the Aardwolf MUSHclient package
   (`aardwolf_colors.lua`, `async`, `movewindow`, and the theme system all come
   from it).
+* **The Aardwolf GMCP mapper plugin.** S&D reads the mapper's database to plan
+  routes. Without it the plugin still runs, but pathing is disabled.
+* Nothing else. All Lua is 5.1 — MUSHclient does not run 5.2 or later.
 
 ---
 
 ## Installing
 
 Download the release archive from the **Releases** page — not the green
-*Code → Download ZIP* button, which gives you the whole source tree. The
-release archive holds only the two things you need: `Search_and_Destroy.xml`
-and the `sounds` folder.
+*Code → Download ZIP* button, which gives you the whole source tree.
 
-1. Extract both into MUSHclient's `plugins` folder, with `sounds` sitting
-   beside the `.xml` file.
+1. Extract the archive into MUSHclient's `plugins` folder. You get
+   `Search_and_Destroy.xml` plus a `sounds` and a `snd_modules` folder beside
+   it; keep them together.
 2. In MUSHclient, choose **File → Plugins → Add** and select
    `Search_and_Destroy.xml`.
 
-That is the whole install. On first load the plugin downloads its own modules
-into a `snd_modules` folder in your MUSHclient directory and seeds its area
-data, so the first run needs a working connection. Everything after that is
-local, and `snd update` fetches only the modules that actually changed.
+That is the whole install. The archive carries everything the plugin needs to
+run, so it works straight away. On first load it does fetch two one-time
+things — its area data, and a seed script that runs once and deletes itself —
+so the first run wants a working connection, but the plugin itself is already
+there.
 
-You do not need to clone this repository — the sounds are the only files that
-ship with the plugin, because they are the only ones it cannot fetch for
-itself. In particular, do not copy the `lua` folder into your plugins
-directory: the plugin treats modules found there as a developer's working copy
-and will never update them, so you would be stuck on old modules while the
-plugin itself moves on. It says so on load if it finds them.
+`snd update` replaces modules in `snd_modules` in place, and only the ones that
+actually changed.
+
+You do not need to clone this repository. In particular, do not copy the `lua`
+folder into your plugins directory: it is the development checkout, the plugin
+ignores it unless it contains a `.dev` marker, and its module names are generic
+enough to collide with scripts of your own. The plugin says so on load if it
+finds modules there.
 
 Your data lives in `SnDdb.db`, alongside the mapper's own database. The mapper
 database is only ever read, never written.
