@@ -3306,6 +3306,19 @@ local function _snd_fnv1a(s)
     return string.format("%08x", hash)
 end
 
+-- MUSHclient variable name for a module's stored download hash.
+--
+-- Variable names may only contain letters, digits and underscores, and every
+-- module name ends in ".lua" -- so "_snd_dlhash_" .. fname produced a name with
+-- a dot in it, which SetVariable rejects. The write failed silently (its return
+-- value was never checked), GetVariable then returned nil, and the stored hash
+-- was permanently "". Every module therefore looked changed on every check, so
+-- 'snd update' re-downloaded all twenty files every single time no matter how
+-- many times it was run.
+local function _snd_hash_key(fname)
+    return "_snd_dlhash_" .. tostring(fname):gsub("%W", "_")
+end
+
 -- Read a file and return its content, or nil on error.
 local function _snd_read_file(path)
     local f = io.open(path, "rb")
@@ -3455,7 +3468,7 @@ function _snd_bootstrap(on_complete)
                 if _snd_write_file(_snd_prod_base .. fname, page) then
                     -- Store baseline .orig for future merge tracking.
                     _snd_write_file(_snd_prod_base .. fname .. ".orig", page)
-                    SetVariable("_snd_dlhash_" .. fname, _snd_fnv1a(page))
+                    SetVariable(_snd_hash_key(fname), _snd_fnv1a(page))
                 else
                     failed[#failed + 1] = fname .. " (write error)"
                 end
@@ -3645,7 +3658,7 @@ local function _snd_apply_update(fname, new_content, force)
     local backup_path = _snd_prod_base .. fname .. ".backup"
     local sidecar_path = _snd_prod_base .. fname .. ".user.lua"
 
-    local stored_hash  = GetVariable("_snd_dlhash_" .. fname) or ""
+    local stored_hash  = GetVariable(_snd_hash_key(fname)) or ""
     local local_content = _snd_read_file(prod_path)
 
     -- Helper: write file + orig baseline + update hash.
@@ -3654,7 +3667,7 @@ local function _snd_apply_update(fname, new_content, force)
         or not _snd_write_file(orig_path, new_content) then
             return false
         end
-        SetVariable("_snd_dlhash_" .. fname, _snd_fnv1a(new_content))
+        SetVariable(_snd_hash_key(fname), _snd_fnv1a(new_content))
         return true
     end
 
@@ -3786,7 +3799,7 @@ function _snd_smart_update(force)
             -- Never touch files served from the dev path, when it is in use.
             if not spent
             and not (_snd_dev_enabled and _snd_file_exists(_snd_dev_base .. fname)) then
-                local stored_hash  = GetVariable("_snd_dlhash_" .. fname) or ""
+                local stored_hash  = GetVariable(_snd_hash_key(fname)) or ""
                 local remote_hash  = entry.hash
                 local prod_missing = not _snd_file_exists(_snd_prod_base .. fname)
 

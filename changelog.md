@@ -2,6 +2,20 @@
 
 ## Bug Fixes
 
+- **Fixed: `snd update` re-downloaded every file, every time.**
+  It decides what to fetch by comparing the manifest's hash for a module
+  against the hash recorded when that module was last downloaded — but the
+  MUSHclient variable it recorded that hash in was named
+  `_snd_dlhash_<module>.lua`, and variable names may only contain letters,
+  digits and underscores.  The dot made the name illegal, so the write was
+  rejected; nothing checked the return value, the read then came back empty,
+  and every module compared as changed.  Running the command twenty times in a
+  row downloaded all twenty files twenty times.
+
+  The first update after this fix still fetches everything once — there are no
+  recorded hashes yet, because none were ever successfully stored — and settles
+  from then on.
+
 - **Fixed: the update banner never went away.**
   Running `snd update` downloaded the modules, told you to reload, and then
   announced the same update again on the next login.  The banner compares the
