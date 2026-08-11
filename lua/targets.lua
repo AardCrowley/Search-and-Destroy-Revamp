@@ -971,8 +971,18 @@ function set_target_from_quest(qt)
     })
 end
 
+-- A target the player named directly, via 'qw <mob>' or 'ht <mob>', rather
+-- than one picked off the campaign list.
+--
+-- `name` matters: it is what the rest of the plugin prints when it refers to
+-- "the mob you are targeting", and it was left unset here. Killing a campaign
+-- mob while one of these was current then hit
+-- ".. current_target.name" with nil and threw, which also poisoned the trigger
+-- so the window stopped updating for the rest of the session. The typed
+-- keyword is the only name we have, and it is what the player called it.
 function set_adhoc_target(keyword)
     change_target({
+        name     = keyword,
         keyword  = keyword,
         area     = gmcp("room.info.zone") or "",
     })
@@ -1442,6 +1452,32 @@ end
 -- killed a CP mob incidentally while targeting another), the kill is recorded
 -- and the list is updated but current_target is left unchanged so navigation
 -- continues toward the originally-targeted mob.
+-- What to call the current target in a message.
+--
+-- Never nil: a nil here does not just spoil the wording, it throws inside a
+-- trigger, and MUSHclient then refuses to run that trigger again for the rest
+-- of the session -- so one bad message stops the CP window updating entirely.
+function snd_target_label()
+    if type(current_target) ~= "table" then return "your target" end
+    return tostring(current_target.name
+                 or current_target.mob
+                 or current_target.keyword
+                 or "your target")
+end
+
+-- The keyword to send to the MUD for the current target, or nil.
+--
+-- Returns nil rather than a placeholder on purpose: a caller about to send
+-- "scan <keyword>" must say it cannot, not send "scan " and confuse the
+-- parser. Keywords come from gmkw(), which can legitimately have nothing for
+-- a mob it has never seen.
+function snd_target_keyword()
+    if type(current_target) ~= "table" then return nil end
+    local kw = current_target.keyword or current_target.name or current_target.mob
+    if type(kw) ~= "string" or kw == "" then return nil end
+    return kw
+end
+
 -- Returns the index that was marked dead, or nil.
 local function handle_mob_killed(activity)
     local killed_index, killed_entry = find_killed_target_by_last_mob()
@@ -1479,11 +1515,11 @@ local function handle_mob_killed(activity)
                 if qty > 1 then
                     InfoNote("SnD: " .. killed_entry.mob ..
                              " [" .. activity:upper() .. "] count now " .. (qty - 1) ..
-                             " (killed incidentally). Still targeting: " .. current_target.name)
+                             " (killed incidentally). Still targeting: " .. snd_target_label())
                 else
                     InfoNote("SnD: " .. killed_entry.mob ..
                              " [" .. activity:upper() .. "] marked dead (killed incidentally)." ..
-                             " Still targeting: " .. current_target.name)
+                             " Still targeting: " .. snd_target_label())
                 end
             end
         end

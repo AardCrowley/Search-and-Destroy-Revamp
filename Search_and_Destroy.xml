@@ -195,6 +195,10 @@ SND_RAW_URL = "https://raw.githubusercontent.com/AardCrowley/Search-and-Destroy-
 -- whatever master happens to hold at that moment.
 SND_BRANCH  = "main"
 
+-- Where 'snd dev update' pulls from. A branch, not a tag: the point is to test
+-- work in progress without cutting a release for it.
+SND_DEV_BRANCH = "dev"
+
 -- Repo-relative path -> full raw URL.  `branch` overrides SND_BRANCH, which is
 -- what the updater uses to pull a specific release.
 function snd_raw_url(path, branch)
@@ -251,7 +255,21 @@ end
 
 -- ─── LIFECYCLE HANDLERS ───────────────────────────────────────────────────────
 
+-- The mapper broadcasts the path it just found on channel 502, as
+-- "found_paths = { ... }" in Lua table syntax, synchronously from inside
+-- findpath(). That is the only way a table can cross between plugins:
+-- CallPlugin carries strings and numbers, not tables.
+--
+-- Only the capture lives here. The bridge that uses it is in pathing.lua, so
+-- that a module calling it still works on an install whose plugin file predates
+-- this -- the global simply stays nil and the BFS is used instead.
+_snd_mapper_path_raw = nil
+
 function OnPluginBroadcast(msg, id, name, text)
+    if msg == 502 and id == PLUGIN_ID_MAPPER then
+        _snd_mapper_path_raw = text
+    end
+
     if id == _GMCP_HANDLER_ID then
         if text == "char.status" then
             current_character_state = gmcp("char.status.state")
@@ -1778,6 +1796,44 @@ function xtest_roomhist()
     print("")
 end
 
+-- Alias handler: 'xtest findpath [<src>] <dst>'.
+--
+-- Settles in a live client whether the mapper's findpath can be reached across
+-- plugin states, and how its answer compares to ours. Reports each step
+-- separately so a failure says which one.
+function xtest_findpath(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local src = tonumber(w.src) or tonumber(gmcp("room.info.num"))
+    local dst = tonumber(w.dst)
+    if not src or not dst then
+        InfoNote("SnD: usage: xtest findpath [<src>] <dst>")
+        return
+    end
+
+    InfoNote("SnD: findpath probe  src=", tostring(src), "  dst=", tostring(dst))
+    InfoNote("SnD:   CallPlugin present : ", tostring(type(CallPlugin) == "function"))
+
+    _snd_mapper_path_raw = nil
+    local ok, rc = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
+                         tostring(src), tostring(dst))
+    InfoNote("SnD:   pcall ok           : ", tostring(ok))
+    InfoNote("SnD:   CallPlugin returned: ", tostring(rc),
+             "   (0 = eOK; 30160 = no such routine)")
+    InfoNote("SnD:   502 broadcast seen : ", tostring(_snd_mapper_path_raw ~= nil))
+    if _snd_mapper_path_raw then
+        InfoNote("SnD:   raw: ", tostring(_snd_mapper_path_raw):sub(1, 150))
+    end
+
+    local mh = (type(snd_mapper_hops) == "function") and snd_mapper_hops(src, dst) or nil
+    local bh = (type(snd_bfs_hops)    == "function") and snd_bfs_hops(src, dst)    or nil
+    InfoNote("SnD:   mapper hops        : ", tostring(mh))
+    InfoNote("SnD:   our BFS hops       : ", tostring(bh))
+    if mh and bh and mh ~= bh then
+        InfoNote("SnD:   they disagree by ", tostring(math.abs(mh - bh)),
+                 " hop(s) -- try this from a noportal room to see the gap.")
+    end
+end
+
 function xtest_areadata()
     local db = assert(sqlite3.open(snd_db_file))
     local sql = "SELECT key, name, minlvl, maxlvl, start_room, noquest, vidblain FROM areas ORDER BY key"
@@ -2025,6 +2081,16 @@ end
 -- Called at the end of a module update. Version strings are compared as
 -- strings, never with tonumber(): tonumber("6.0.1") is nil, so anything with
 -- three parts would compare as "no version at all".
+-- Replace the plugin file with the copy on `ref`, whatever version it claims.
+--
+-- Releases compare versions first; a dev branch cannot, since its version does
+-- not change between pushes. Testing plugin-file changes is the main reason
+-- 'snd dev update' exists, so it always takes the branch's copy.
+function _snd_update_plugin_file_from(ref)
+    download_file(snd_raw_url("Search_and_Destroy.xml", ref),
+                  callback_update_plugin)
+end
+
 function _snd_update_plugin_file_if_stale()
     download_file(snd_raw_url("VERSION"), function(retval, page, status)
         if status ~= 200 or not page then return end
@@ -2539,35 +2605,6 @@ function mobGo(_name, _line, args)
     Execute("mapper goto " .. mshow[idx][3])
 end
 
-function xset_nx_check()
-    InfoNote("xset nx is set to ", xset_nx_action)
-    print_xset_nx_desc()
-end
-function print_xset_nx_desc()
-    if xset_nx_action == "smartscan" then
-        InfoNote(
-            "You will ",
-            "scan",
-            " every room upon arrival after nx or go, filtering down to just campaign, gquest, and quest targets. If you encounter potential noscan mobs, follow up with a filtered ",
-            "consider",
-            " to check if they are here.\n"
-        )
-    elseif xset_nx_action == "con" then
-        InfoNote("You will ", "consider", " every room upon arrival after nx or go.\n")
-    elseif xset_nx_action == "scan" then
-        InfoNote("You will ", "scan", " surrounding rooms upon arrival after nx or go.\n")
-    elseif xset_nx_action == "scanhere" then
-        InfoNote("You will ", "scan the current room", " upon arrival after nx or go.\n")
-    elseif xset_nx_action == "qs" then
-        InfoNote(
-            "You will ",
-            "quick scan",
-            " every room upon arrival after nx or go, looking only for your target mob.\n"
-        )
-    else
-        InfoNote("You will take no action upon arrival after nx or go.\n")
-    end
-end
 
 function consider_unkillable(name, line, wildcards, style)
     EnableTrigger("consider_end", true)
@@ -3813,7 +3850,7 @@ end
 --       the production file; if it doesn't parse, your existing file is left
 --       untouched and the reason is reported.
 -- force=true: skip conflict detection; always overwrite (still backs up first).
-function _snd_smart_update(force)
+function _snd_smart_update(force, ref)
     if not snd_async() then
         ColourNote("white", "red", "SnD: 'async' library not available.")
         return
@@ -3824,9 +3861,15 @@ function _snd_smart_update(force)
         json_ok, json = pcall(require, "json")
     end
 
-    ColourNote("silver", "", "SnD: Checking for updates...")
+    if ref then
+        ColourNote("white", "darkgreen",
+            "SnD: Updating from the '" .. ref .. "' branch -- this is a " ..
+            "development build, not a release.")
+    else
+        ColourNote("silver", "", "SnD: Checking for updates...")
+    end
 
-    snd_http_get(snd_raw_url("manifest.json"),
+    snd_http_get(snd_raw_url("manifest.json", ref),
     function(retval, page, status)
         if status ~= 200 or not page or #page == 0 then
             ColourNote("white", "darkred",
@@ -3879,7 +3922,11 @@ function _snd_smart_update(force)
             -- about the plugin itself, and a release that only touches the XML
             -- -- which several fixes have been -- changes no module at all.
             -- Returning here would leave that release permanently unreachable.
-            _snd_update_plugin_file_if_stale()
+            if ref then
+                _snd_update_plugin_file_from(ref)
+            else
+                _snd_update_plugin_file_if_stale()
+            end
             return
         end
 
@@ -3892,7 +3939,7 @@ function _snd_smart_update(force)
 
         for _, entry in ipairs(to_download) do
             local fname = entry.file
-            snd_http_get(snd_raw_url("lua/" .. fname),
+            snd_http_get(snd_raw_url("lua/" .. fname, ref),
             function(r, content, s)
                 completed = completed + 1
 
@@ -3984,7 +4031,11 @@ function _snd_smart_update(force)
                     -- was never called from anywhere. So a user could run
                     -- 'snd update', watch twenty modules download, reload, and
                     -- still be told an update was available, forever.
-                    _snd_update_plugin_file_if_stale()
+                    if ref then
+                        _snd_update_plugin_file_from(ref)
+                    else
+                        _snd_update_plugin_file_if_stale()
+                    end
                 end
             end)
         end
@@ -4043,6 +4094,15 @@ end
 -- manifest. A local edit is backed up to <file>.backup before being replaced.
 function xset_snd_force_update(name, line, wildcards)
     _snd_smart_update(true)
+end
+
+-- Alias handler: 'snd dev update'.
+--
+-- Pulls modules and the plugin file from the development branch. Forced,
+-- because a dev branch's version does not change between pushes, so nothing
+-- would look stale.
+function xset_snd_dev_update(name, line, wildcards)
+    _snd_smart_update(true, SND_DEV_BRANCH)
 end
 
 -- ─── EAGER LOCAL LOAD ────────────────────────────────────────────────────────
@@ -4129,15 +4189,15 @@ local _snd_subroutines = {
     "xset_mob_clearflags", "xset_mob_difficulty", "xset_mob_express", "xset_mob_levelok",
     "xset_mob_noaction", "xset_mob_nohunt", "xset_mob_noscan", "xset_mob_nowhere",
     "xset_mob_priority", "xset_mob_tags", "xset_mob_unpriority", "xset_noexp_tnl",
-    "xset_nx", "xset_nx_check", "xset_pathing", "xset_pathing_express",
-    "xset_quick_kill_command", "xset_rlink", "xset_silent_mode", "xset_snd_force_update",
+    "xset_nx", "xset_pathing", "xset_pathing_express", "xset_quick_kill_command",
+    "xset_rlink", "xset_silent_mode", "xset_snd_dev_update", "xset_snd_force_update",
     "xset_snd_update", "xset_sound", "xset_table_notes", "xset_table_width",
     "xset_to_mark", "xset_vidblain", "xset_vidblain_setlevel", "xtest_areadata",
-    "xtest_debug", "xtest_debug_gquest", "xtest_gq_end", "xtest_gq_join",
-    "xtest_gq_kill", "xtest_gq_lose", "xtest_gq_quit", "xtest_gq_start",
-    "xtest_gq_waiting", "xtest_gq_win", "xtest_loadroom", "xtest_mcvars",
-    "xtest_popmsg", "xtest_print_target", "xtest_roomhist", "xtest_set_qt",
-    "xtest_xcp",
+    "xtest_debug", "xtest_debug_gquest", "xtest_findpath", "xtest_gq_end",
+    "xtest_gq_join", "xtest_gq_kill", "xtest_gq_lose", "xtest_gq_quit",
+    "xtest_gq_start", "xtest_gq_waiting", "xtest_gq_win", "xtest_loadroom",
+    "xtest_mcvars", "xtest_popmsg", "xtest_print_target", "xtest_roomhist",
+    "xtest_set_qt", "xtest_xcp",
 }
 
 local _snd_stub_notified = false
@@ -4367,6 +4427,8 @@ end
         <alias enabled="y" match="^(?:xhelp|snd help)(?:\s(?<search>.*))?$" regexp="y" script="onHelp" sequence="100">
         </alias>
 
+        <alias match="^snd dev update$" script="xset_snd_dev_update" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
         <alias enabled="y" match="^snd force update$" script="xset_snd_force_update" regexp="y" sequence="100">
         </alias>
 
@@ -4501,7 +4563,7 @@ end
         <!-- xset import: one-time import of marks/areas from old plugin state variables -->
         <alias match="^xset import$" script="xset_import_area_vars" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
-        <alias match="^xset nx$" script="xset_nx_check" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset nx$" script="xset_nx" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xset nx (?<action>smartscan|con|scan|scanhere|qs|none)$" script="xset_nx" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
@@ -4548,6 +4610,8 @@ end
 
 
         <!-- xtest commands -->
+        <alias match="^xtest findpath(?: (?<src>\d+))? (?<dst>\d+)$" script="xtest_findpath" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
         <alias match="^xtest areadata$" script="xtest_areadata" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xtest mcvars$" script="xtest_mcvars" enabled="y" regexp="y" sequence="100"></alias>
@@ -4594,7 +4658,7 @@ end
 
         <alias match="^xset debug(?: (?<option>on|off))?$" script="xset_debug" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^snd settings?$" script="sp_toggle" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
-        <alias match="^snd debug(?: (?<action>clear))?$" script="snd_debug_cmd" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^snd debug(?: (?<action>clear|dump))?$" script="snd_debug_cmd" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^snd reload$" script="sndReload" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <!-- New commands -->

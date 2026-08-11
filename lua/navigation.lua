@@ -1168,20 +1168,49 @@ local NX_OPTIONS = {
     scanhere  = "scanhere — scan here on arrival",
     con       = "con — consider on arrival",
     qs        = "qs — quick scan on arrival",
+    none      = "none — take no action on arrival",
 }
 
+local NX_ORDER = { "smartscan", "scan", "scanhere", "con", "qs", "none" }
+
+-- What each option actually does, for the bare 'xset nx'.
+local NX_DESC = {
+    smartscan = "You will scan every room on arrival after nx or go, filtered " ..
+                "down to campaign, gquest and quest targets. If a potential " ..
+                "noscan mob turns up, a filtered consider follows to check " ..
+                "whether it is here.",
+    scan      = "You will scan the surrounding rooms on arrival after nx or go.",
+    scanhere  = "You will scan the current room on arrival after nx or go.",
+    con       = "You will consider every room on arrival after nx or go.",
+    qs        = "You will quick-scan on arrival after nx or go.",
+    none      = "You will take no action on arrival after nx or go.",
+}
+
+-- Alias handler: 'xset nx [<action>]'.
+--
+-- This used to be two commands that disagreed with each other. The bare form
+-- lived in the plugin file and printed a global that nothing ever assigned, so
+-- it always showed blank; this one reads the wildcard by the wrong name --
+-- the alias captures `action`, not `option` -- so setting an action fell
+-- through to the "show current" branch and silently did nothing. Between them
+-- the arrival action could not be inspected or changed, and stayed on its
+-- default forever.
 function xset_nx(name, line, wildcards)
-    local opt = Trim(wildcards.option or ""):lower()
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local opt = Trim(tostring(w.action or w.option or w[1] or "")):lower()
+
     if NX_OPTIONS[opt] then
         snd_set_setting("nx_action", opt, false)
         InfoNote("SnD: nx action set to: " .. NX_OPTIONS[opt])
+        if NX_DESC[opt] then InfoNote("SnD: " .. NX_DESC[opt]) end
     elseif opt == "" then
         local cur = snd_get_setting("nx_action", "qs")
         InfoNote("SnD: Current nx action: " .. (NX_OPTIONS[cur] or cur))
-        InfoNote("SnD: Options: " .. table.concat({
-            "smartscan","scan","scanhere","con","qs"}, ", "))
+        if NX_DESC[cur] then InfoNote("SnD: " .. NX_DESC[cur]) end
+        InfoNote("SnD: Options: " .. table.concat(NX_ORDER, ", "))
     else
         ErrorNote("SnD: Unknown nx action '" .. opt .. "'.")
+        InfoNote("SnD: Options: " .. table.concat(NX_ORDER, ", "))
     end
 end
 

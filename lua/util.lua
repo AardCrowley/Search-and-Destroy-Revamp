@@ -193,6 +193,46 @@ function print_alternating_note(messages, regular_color, highlight_color, backgr
     print("")
 end
 
+-- ─── ALWAYS-ON TRACE BUFFER ──────────────────────────────────────────────────
+--
+-- Debug logging only helps if it was already on, and it never is the first time
+-- something goes wrong. So every DebugNote and ErrorNote is recorded here
+-- regardless of the debug setting, in a fixed-size ring in memory, and written
+-- out only when it is worth reading: on an error, or when asked.
+--
+-- The cost is one table slot per note and no file I/O, so it can stay on
+-- permanently. Nothing is written to disk during ordinary play.
+local TRACE_MAX   = 250          -- notes kept; a few minutes of active play
+local _trace      = {}           -- ring buffer
+local _trace_head = 0            -- count of notes ever recorded
+local _trace_dumping = false     -- guards against recursion through ErrorNote
+
+local function trace_record(level, parts)
+    local msg = ""
+    for i = 1, #parts do
+        msg = msg .. (i > 1 and " " or "") .. tostring(parts[i])
+    end
+    _trace_head = _trace_head + 1
+    _trace[(_trace_head - 1) % TRACE_MAX + 1] = {
+        t = os.date("%H:%M:%S"), lvl = level, msg = msg,
+    }
+end
+
+-- The buffer in chronological order.
+function trace_entries()
+    local out = {}
+    local n   = math.min(_trace_head, TRACE_MAX)
+    local start = (_trace_head > TRACE_MAX) and (_trace_head % TRACE_MAX) or 0
+    for i = 1, n do
+        out[#out + 1] = _trace[(start + i - 1) % TRACE_MAX + 1]
+    end
+    return out
+end
+
+function trace_count()
+    return math.min(_trace_head, TRACE_MAX), _trace_head
+end
+
 function InfoNote(...)
     print_alternating_note({...}, NOTE_COLORS.INFO, NOTE_COLORS.INFO_HIGHLIGHT)
 end
@@ -206,11 +246,16 @@ function ErrorNote(...)
         NOTE_COLORS.ERROR_HIGHLIGHT,
         NOTE_COLORS.ERROR_BACKGROUND
     )
+    trace_record("ERROR", {...})
     if type(snd_get_setting) == "function"
     and snd_get_setting("debug_mode", "off") == "on" then
         if not _debug_log_fh then debug_log_open() end
         debug_log_write("ERROR", ...)
     end
+    -- An error is the moment the preceding notes become worth having. Written
+    -- out even with debug mode off, which is the whole point: nobody turns it
+    -- on until after the thing they wanted to see has happened.
+    trace_dump("error")
 end
 
 function ImportantNote(...)
@@ -276,6 +321,61 @@ function debug_log_write(level, ...)
     end)
 end
 
+-- Roll the log over once it passes LOG_MAX_BYTES, keeping one generation.
+--
+-- Without this an always-on trace grows without limit on a machine nobody is
+-- watching. One previous generation is enough to cover "it broke, and the
+-- interesting part scrolled past".
+local LOG_MAX_BYTES = 512 * 1024
+
+function debug_log_rotate_if_large()
+    local path = debug_log_path()
+    local size = nil
+    pcall(function()
+        local fh = io.open(path, "rb")
+        if fh then size = fh:seek("end"); fh:close() end
+    end)
+    if not size or size < LOG_MAX_BYTES then return false end
+
+    local was_open = _debug_log_fh ~= nil
+    debug_log_close()
+    pcall(function() os.remove(path .. ".1") end)
+    pcall(function() os.rename(path, path .. ".1") end)
+    if was_open then debug_log_open() end
+    return true
+end
+
+-- Write the trace buffer to the log.
+--
+-- reason: what prompted it, recorded at the top so the file explains itself.
+-- Returns the number of entries written.
+function trace_dump(reason)
+    if _trace_dumping then return 0 end
+    _trace_dumping = true
+
+    local entries = trace_entries()
+    local kept, total = trace_count()
+    local ok = pcall(function()
+        debug_log_rotate_if_large()
+        local fh = io.open(debug_log_path(), "a")
+        if not fh then return end
+        fh:write(string.format(
+            "\n===== SnD trace (%s) - %s - v%s - %d of %d note(s) =====\n",
+            tostring(reason or "on request"),
+            os.date("%Y-%m-%d %H:%M:%S"),
+            (type(snd_version) == "function" and snd_version()) or "?",
+            kept, total))
+        for _, e in ipairs(entries) do
+            fh:write(string.format("[%s] [%-5s] %s\n", e.t, e.lvl, e.msg))
+        end
+        fh:write("===== end of trace =====\n")
+        fh:flush(); fh:close()
+    end)
+
+    _trace_dumping = false
+    return ok and #entries or 0
+end
+
 -- Truncate the log file (re-opens if logging was active).
 function debug_log_clear()
     local was_open = _debug_log_fh ~= nil
@@ -326,12 +426,31 @@ function snd_debug_cmd(name, line, wildcards)
     local action = ((wildcards and wildcards.action) or ""):lower()
     if action == "clear" then
         debug_log_clear()
+    elseif action == "dump" then
+        -- For when behaviour is wrong but nothing errored, which is most
+        -- reports. Notes are recorded continuously but never written during
+        -- ordinary play, so this is the only way to capture such a run.
+        local kept, total = trace_count()
+        local n = trace_dump("requested")
+        if n > 0 then
+            InfoNote("SnD: wrote " .. n .. " of " .. total ..
+                     " recorded note(s) to:")
+            InfoNote("  " .. debug_log_path())
+            InfoNote("SnD: send that file along with what you were doing.")
+        else
+            InfoNote("SnD: nothing recorded yet.")
+        end
     else
         local cur = snd_get_setting("debug_mode", "off")
+        local kept, total = trace_count()
         InfoNote("SnD: Debug mode is " .. ((cur == "on") and "ON" or "OFF") .. ".")
         InfoNote("SnD: Log file: " .. debug_log_path())
+        InfoNote("SnD: Trace buffer holds " .. kept .. " of the last " ..
+                 total .. " note(s), recorded whether or not debug mode is on.")
+        InfoNote("SnD: 'snd debug dump' writes them out; it happens by itself " ..
+                 "on an error.")
         if cur ~= "on" then
-            InfoNote("SnD: Use 'xset debug on' to enable debug logging.")
+            InfoNote("SnD: Use 'xset debug on' to also show them as they happen.")
         end
     end
 end
@@ -341,6 +460,8 @@ end
 -- Debug note: only prints when the debug_mode setting is "on".
 -- Also writes to the log file.  Safe to call before settings.lua is loaded.
 function DebugNote(...)
+    -- Recorded whether or not debug mode is on; only *shown* when it is.
+    trace_record("DEBUG", {...})
     if type(snd_get_setting) == "function" and
        snd_get_setting("debug_mode", "off") == "on" then
         if not _debug_log_fh then debug_log_open() end

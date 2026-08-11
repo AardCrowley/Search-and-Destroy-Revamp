@@ -100,7 +100,10 @@ function qw_match(name, line, wildcards)
             found = true
         end
     else
-        local parts = split(current_target.keyword:lower(), "[^ ]+")
+        -- gmkw() can have no keyword for a mob it has never seen, and a nil
+        -- here throws inside a trigger -- which MUSHclient then disables for
+        -- the rest of the session.
+        local parts = split((snd_target_keyword() or ""):lower(), "[^ ]+")
         for _, p in ipairs(parts) do
             if string.find(mob_lower, p, 1, true) then
                 found = true; break
@@ -111,7 +114,13 @@ function qw_match(name, line, wildcards)
     if not found then
         qw.index = (qw.index or 1) + 1
         if qw.index < HUNT_INDEX_LIMIT then
-            SendNoEcho(string.format("where %s.%s", qw.index, current_target.keyword))
+            local kw = snd_target_keyword()
+            if not kw then
+                InfoNote("SnD: no keyword for the current target -- set one with 'xset kw'.")
+                qw_reset(qw.exact)
+                return
+            end
+            SendNoEcho(string.format("where %s.%s", qw.index, kw))
         else
             DebugNote("SnD: qw: too many iterations, giving up.")
             qw_reset(qw.exact)
@@ -161,7 +170,7 @@ function qw_no_match()
     if has_activity_target() then
         -- Show DB-backed room suggestions.
         local rows = lookup_not_found_mob(
-            current_target.name:lower(),
+            snd_target_label():lower(),
             current_target.arid or gmcp("room.info.zone") or ""
         )
         if #rows == 0 then return end
@@ -286,7 +295,12 @@ function quick_scan()
     end
     if has_target() then
         sound_not_played = true  -- suppress "target nearby" beep when scan fires as part of a deliberate search
-        Send(string.format("scan %s", current_target.keyword))
+        local kw = snd_target_keyword()
+        if not kw then
+            InfoNote("SnD: no keyword for the current target -- set one with 'xset kw'.")
+            return
+        end
+        Send(string.format("scan %s", kw))
     else
         Send("scan")
     end
@@ -310,7 +324,13 @@ function quick_kill(name, line, wildcards)
         InfoNote("\nSnD: Quick-kill has no target. Use 'ht', 'qw', or 'xcp'.\n")
         return
     end
-    local targ_name = " '" .. current_target.keyword .. "'"
+    local kw = snd_target_keyword()
+    if not kw then
+        InfoNote("\nSnD: Quick-kill has no keyword for the current target. " ..
+                 "Set one with 'xset kw'.\n")
+        return
+    end
+    local targ_name = " '" .. kw .. "'"
     local cmd_str   = snd_get_setting("quick_kill_command", "k")
     for cmd in cmd_str:gmatch("[^;]+") do
         cmd = Trim(cmd)

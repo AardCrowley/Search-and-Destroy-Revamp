@@ -2,6 +2,31 @@
 
 ## Bug Fixes
 
+- **Fixed: `xset nx` could neither show nor change the arrival action.**
+  It was two implementations that disagreed.  The bare form printed a global
+  nothing ever assigned, so it always showed blank; the form that takes an
+  action read the wildcard under the wrong name, so every attempt to set one
+  fell through to the "show current" branch and did nothing.  Between them the
+  action stayed on its default whatever you typed.  `none` was accepted by the
+  command but missing from the list of actions, so it would have been rejected
+  too.  One implementation now, and it describes what each option does.
+
+- **Fixed: a crash when killing a campaign mob after `qw <mob>` or `ht <mob>`.**
+  Naming a mob directly creates an ad-hoc target, and that target was built
+  without a `name` field — so the message printed on killing a campaign mob
+  concatenated `nil` and threw.  MUSHclient disables a trigger whose script
+  errors, so the CP window then stopped updating for the rest of the session.
+  Ad-hoc targets now carry the name you typed, and messages about the current
+  target fall back to a label rather than throwing if a field is ever absent.
+
+  Reported by **QuickBen**.
+
+  The same audit found five more places — in `qw`, `scan` and quick-kill —
+  where a missing keyword or name would have thrown the same way.  Commands
+  that need a keyword now say so and stop, rather than sending a half-formed
+  command or taking a trigger down with them.  A test fails the build if any
+  target field is ever used somewhere a nil would throw.
+
 - **Fixed: `snd update` re-downloaded every file, every time.**
   It decided what to fetch by comparing the manifest's hash for a module
   against a hash remembered from the last download — and that remembered hash
@@ -45,6 +70,25 @@
   captured and thrown away — the handler never read it.  Along with two
   `betaVersion` / `prevBeta` globals that were only ever `nil` and existed to
   decorate a message.  All gone rather than left looking functional.
+
+- **New: an always-on trace buffer.**
+  Debug logging only ever helped if it was already switched on — and it never
+  is the first time something goes wrong.  Every debug and error note is now
+  kept in a small ring in memory whether or not debug mode is on, costing no
+  file writes during ordinary play, and written out when it is worth reading:
+  automatically on an error, or on demand with `snd debug dump`.  The log rolls
+  over at half a megabyte, keeping one previous generation.
+
+  `snd debug` reports how many notes are held.  For a report where nothing
+  errored but the behaviour was wrong, `snd debug dump` right afterwards
+  captures the run-up.
+
+- **New: `snd dev update`.**
+  Pulls modules and the plugin file from a development branch instead of a
+  release, so changes can be tested without cutting one.  Always a full
+  re-download — a development branch's version does not change between pushes,
+  so nothing would look stale — and it says plainly that you are on a
+  development build.
 
 - **New: `snd version`.**
   Reports the installed version, the plugin file it is running from, how many

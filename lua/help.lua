@@ -919,15 +919,20 @@ local TOPICS = {
     {
         key      = "snd update",
         category = "System",
-        aliases  = { "snd force update" },
+        aliases  = { "snd force update", "snd dev update" },
         syntax   = {
             "snd update              (update to the latest release)",
             "snd force update        (re-download every module regardless)",
+            "snd dev update          (pull from the development branch)",
         },
         summary  = "Update Search & Destroy to the latest version.",
         sections = {
             {
                 text = "Downloads and installs the latest released version of S&D. Modules are fetched first -- only the ones that actually changed -- and then the plugin file itself if a newer release is out.\n\nWhen only modules changed, type 'snd reload' afterwards to apply them. When the plugin file is replaced it reloads on its own. Your database and settings are never touched by an update.",
+            },
+            {
+                heading = "snd dev update",
+                text    = "Pulls modules and the plugin file from the development branch rather than a release, for testing work in progress. Always a full re-download, since a development branch's version does not change between pushes, and it says clearly that you are on a development build. Run a normal 'snd update' to get back onto releases.",
             },
             {
                 heading = "snd force update",

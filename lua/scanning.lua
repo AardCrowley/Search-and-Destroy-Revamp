@@ -224,7 +224,7 @@ function mob_activity_tags(mob_name, in_current_room)
     if on_list then
         if in_current_room then
             if has_activity_target()
-            and current_target.name:lower() == lower_name then
+            and snd_target_label():lower() == lower_name then
                 activity_target_found_here = true
             else
                 other_target_found_here = true

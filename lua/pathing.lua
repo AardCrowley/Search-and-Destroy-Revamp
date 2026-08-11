@@ -427,6 +427,66 @@ local function hop_count(start_room, dest_room, shared_db)
     return dist[tostring(dest_room)] or UNREACHABLE
 end
 
+-- ─── MAPPER FINDPATH BRIDGE (EXPERIMENTAL) ───────────────────────────────────
+--
+-- Ask the mapper for a real path, in its own Lua state, and get the hop count.
+--
+-- Why bother: the mapper's findpath() handles noportal/norecall properly. If
+-- the route starts with a portal you cannot use from where you stand, it walks
+-- to a room where you can and portals from there, and it knows about bounce
+-- portals. Our BFS seeds every portal destination at depth 1 regardless, so it
+-- under-estimates distance wherever portals are not usable -- which shows up as
+-- a worse visiting order, not a broken path, since the mapper still does the
+-- walking.
+--
+-- Why it is awkward: plugins do not share a Lua state, so aardmapper.findpath
+-- is not visible from here. CallPlugin can reach it (findpath is a plain global
+-- in the mapper, not inside a module()) but cannot bring a table back. The path
+-- arrives instead on broadcast channel 502, which the plugin file captures into
+-- _snd_mapper_path_raw.
+--
+-- NOT VERIFIED IN A LIVE CLIENT. Nothing depends on it yet: it returns nil on
+-- any doubt, and hop_count() keeps using the BFS until this is proven.
+function snd_mapper_hops(src, dst)
+    if type(CallPlugin) ~= "function" then return nil end
+    if type(PLUGIN_ID_MAPPER) ~= "string" then return nil end
+
+    _snd_mapper_path_raw = nil
+    local ok, rc = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
+                         tostring(src), tostring(dst))
+    if not ok then
+        DebugNote("SnD: mapper findpath: CallPlugin raised: " .. tostring(rc))
+        return nil
+    end
+    if rc ~= 0 then
+        DebugNote("SnD: mapper findpath: CallPlugin returned " .. tostring(rc))
+        return nil
+    end
+
+    local raw = _snd_mapper_path_raw
+    _snd_mapper_path_raw = nil
+    if type(raw) ~= "string" or raw == "" then
+        DebugNote("SnD: mapper findpath: no path broadcast arrived")
+        return nil
+    end
+
+    local body = raw:match("=%s*(%b{})")
+    if not body then return nil end
+    local chunk = loadstring("return " .. body)
+    if not chunk then return nil end
+    local ok2, path = pcall(chunk)
+    if not ok2 or type(path) ~= "table" then return nil end
+    return #path
+end
+
+-- Our own BFS answer, for comparing against the mapper's during testing.
+function snd_bfs_hops(src, dst)
+    local d = bfs_from(tonumber(src), tonumber(dst))
+    local n = d and d[tostring(dst)]
+    if not n or n >= UNREACHABLE then return nil end
+    return n
+end
+
 -- ─── MAZE ROOM DETECTION ─────────────────────────────────────────────────────
 
 -- Returns true when the given room ID is itself a maze entrance.
