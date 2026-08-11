@@ -158,9 +158,20 @@ table_width = 80
 -- major.minor of it.
 SND_VERSION = "6.0.1"
 
--- snd_version() itself lives in constants.lua, not here: modules are updated by
--- 'snd update' while this file is not, so a module calling a function that
--- exists only in the XML would break every install running an older plugin.
+-- snd_version() also exists in constants.lua, for the modules to call: modules
+-- are updated by 'snd update' while this file is not, so a module calling a
+-- function that lives only here would break any install running an older
+-- plugin file.
+--
+-- This file cannot call that one, though. The update path runs
+-- _snd_update_plugin_file_if_stale() the instant the module downloads finish,
+-- which is before the new modules have been loaded -- and on an install whose
+-- constants.lua predates snd_version(), the global is simply not there. That
+-- is a run-time error in the middle of an update. So the XML reads the
+-- constant directly and never depends on a module being present.
+local function _snd_version_str()
+    return tostring(SND_VERSION or PLUGIN_VERSION or "?")
+end
 
 -- ─── REMOTE SOURCE ────────────────────────────────────────────────────────────
 --
@@ -1997,7 +2008,7 @@ function check_version_callback(callback, log_no_updates)
             return
         end
         local upstream_version = Trim(page)
-        if upstream_version ~= snd_version() then
+        if upstream_version ~= _snd_version_str() then
             callback(upstream_version)
         elseif log_no_updates then
             InfoNote("Search&Destroy: No new updates available")
@@ -2020,9 +2031,9 @@ function _snd_update_plugin_file_if_stale()
     download_file(snd_raw_url("VERSION"), function(retval, page, status)
         if status ~= 200 or not page then return end
         local latest = Trim(page)
-        if latest == "" or latest == snd_version() then return end
+        if latest == "" or latest == _snd_version_str() then return end
         ColourNote("silver", "",
-            "SnD: Plugin file is v" .. snd_version() ..
+            "SnD: Plugin file is v" .. _snd_version_str() ..
             ", latest is v" .. latest .. " -- updating it too.")
         do_update(latest)
     end)
@@ -2046,7 +2057,7 @@ function callback_update_plugin(retval, page, status, headers, full_status, requ
     local upstream_version = string.match(page, 'SND_VERSION%s*=%s*"([^"]*)"')
                              or string.match(page, '<plugin version="([0-9%.]+)"')
                              or "(unknown)"
-    local pluginVer = snd_version()
+    local pluginVer = _snd_version_str()
     if prevBeta then
         pluginVer = pluginVer .. " (Beta " .. prevBeta .. ")"
     end
@@ -2098,7 +2109,7 @@ function show_update_banner(upstream_version)
         "             Current version: ",
         "tomato",
         "",
-        snd_version(),
+        _snd_version_str(),
         "silver",
         "",
         " Latest version: ",
@@ -3989,7 +4000,7 @@ end
 -- actually being loaded from -- the single most useful thing to know when
 -- someone says an update did not take effect.
 function snd_show_version()
-    InfoNote("SnD: Search & Destroy v", snd_version())
+    InfoNote("SnD: Search & Destroy v", _snd_version_str())
 
     local plugin_path = GetPluginInfo(GetPluginID(), 6)
     if plugin_path and plugin_path ~= "" then
@@ -4016,7 +4027,7 @@ function snd_show_version()
     end
 
     local seen = last_installed_version
-    if seen and seen ~= "" and seen ~= snd_version() then
+    if seen and seen ~= "" and seen ~= _snd_version_str() then
         InfoNote("SnD: changelog last shown for v", tostring(seen),
                  " -- run 'snd changelog' for what has changed since.")
     end

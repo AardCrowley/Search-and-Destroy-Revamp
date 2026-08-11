@@ -26,6 +26,14 @@
   — only when modules changed, since replacing the plugin file reloads by
   itself.
 
+- **Fixed: a run-time error at the end of an update.**
+  The plugin checks whether its own file is out of date the instant the module
+  downloads finish — which is *before* the new modules have been loaded.  It
+  did that by calling a function that lives in `constants.lua`, so on any
+  install whose modules predate that function the call hit a nil global and
+  threw mid-update.  The plugin file now reads the version constant directly
+  and never depends on a module being loaded.
+
 - **New: `snd version`.**
   Reports the installed version, the plugin file it is running from, how many
   modules loaded and out of which folder, any module that failed to load, and
