@@ -650,7 +650,24 @@ function build_room_targets(cp_gq)
                 end
 
                 if any_area_seen then
-                    -- Most-seen area first, so the strongest guess leads.
+                    -- Only the best-attested area stays in the main list.
+                    --
+                    -- Ordering these by sighting count is not enough on its
+                    -- own: `high` is re-sorted by area at the end of this
+                    -- function, so every target in one area is visited
+                    -- together, and that sort discards any order set here.
+                    -- Which tier an entry lands in does survive it, so the
+                    -- weaker guesses are deferred rather than merely ranked
+                    -- below the stronger one.
+                    --
+                    -- Ties keep every area that is equally attested -- there
+                    -- is nothing to choose between them.
+                    local best = 0
+                    for _, p in ipairs(possibilities) do
+                        local n = p.area_seen or 0
+                        if n > best then best = n end
+                    end
+
                     table.sort(possibilities, function(x, y)
                         local sx, sy = x.area_seen or 0, y.area_seen or 0
                         if sx ~= sy then return sx > sy end
@@ -659,8 +676,11 @@ function build_room_targets(cp_gq)
                     local tmp_high, tmp_low = {}, {}
                     for _, p in ipairs(possibilities) do
                         p.duplicates = #possibilities
-                        if p.area_seen then tmp_high[#tmp_high+1] = p
-                        else p.unlikely = true; tmp_low[#tmp_low+1] = p end
+                        if (p.area_seen or 0) == best then
+                            tmp_high[#tmp_high+1] = p
+                        else
+                            p.unlikely = true; tmp_low[#tmp_low+1] = p
+                        end
                     end
                     for i, p in ipairs(tmp_high) do p.index = i;            high[#high+1] = p end
                     for i, p in ipairs(tmp_low)  do p.index = i + #tmp_high; low[#low+1]   = p end

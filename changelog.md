@@ -159,7 +159,12 @@
 
   Reported by **Obyron**, who had hit the same class of bug in 5.99 from the
   other direction: there the area-wide branch existed, but its condition could
-  never be false, so it never ran.
+  never be false, so it never ran.  He then caught the first version of this
+  fix ordering the candidates by sighting count, which achieved nothing — the
+  list is re-sorted by area key afterwards so that every target in one area is
+  visited together, and that threw the order away.  Which tier a candidate
+  lands in does survive it, so the weaker guesses are deferred rather than
+  merely ranked below the stronger one.
 
 # v6.0
 
