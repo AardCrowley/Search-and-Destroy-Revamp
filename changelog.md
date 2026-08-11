@@ -19,13 +19,33 @@
   `.orig` baseline written when it was downloaded, which is what that file is
   for.
 
+- **Update messages now name the command.**
+  "Reload the plugin to apply updates" left you to work out how; it says
+  `snd reload` now.  The same for the message shown when a first-time download
+  fails.  The `snd update` help also spells out when a reload is needed at all
+  — only when modules changed, since replacing the plugin file reloads by
+  itself.
+
+- **New: `snd version`.**
+  Reports the installed version, the plugin file it is running from, how many
+  modules loaded and out of which folder, any module that failed to load, and
+  whether the changelog has been shown for this release.  That "which folder"
+  line is usually the answer when an update appears not to have taken effect,
+  since modules in a developer folder are deliberately never replaced.
+
 - **Fixed: the version was truncated to `6`.**
   MUSHclient stores a plugin's `version` attribute as a *number*, so a
   three-part version like `6.0.1` came back as `6` — which is what the load
   banner showed.  Every comparison against the published `VERSION` therefore
   saw a permanent mismatch, which on its own would have kept the update banner
-  up forever and re-fetched the plugin file on every check.  The full version
-  is now carried explicitly as a string and used everywhere.
+  up forever and re-fetched the plugin file on every check.
+
+  It is worse than truncation: MUSHclient refuses to load a plugin whose
+  version has more than one decimal place at all ("Too many decimal places for
+  numeric attribute named 'version'").  So that attribute can only ever carry
+  major.minor, and the real version now lives in a string constant that
+  everything else compares against.  The release tooling checks the two agree
+  and that the attribute is the major.minor of the release.
 
 - **Fixed: the update banner never went away.**
   Running `snd update` downloaded the modules, told you to reload, and then

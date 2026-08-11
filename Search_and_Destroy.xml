@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="iso-8859-1"?><!DOCTYPE muclient>
 <!-- Saved on Saturday, July 05, 2008, 4:46 PM -->
 <muclient>
-    <plugin version="6.0.1" name="Search_and_Destroy" id="30000000537461726C696E67" date_written="2018-12-31 23:00:00" author="Crowley" language="Lua" purpose="Safe, legal Search and Destroy" save_state="y" requires="4.90">
+    <plugin version="6.0" name="Search_and_Destroy" id="30000000537461726C696E67" date_written="2018-12-31 23:00:00" author="Crowley" language="Lua" purpose="Safe, legal Search and Destroy" save_state="y" requires="4.90">
         <description trim="n"></description>
     </plugin>
 
@@ -145,8 +145,17 @@ table_width = 80
 -- VERSION file sees a permanent mismatch: the update banner would never clear
 -- and the plugin file would be re-fetched on every check.
 --
--- Keep this in step with the VERSION file and the plugin attribute;
--- tests/version_consistency_test.lua fails the build if they disagree.
+-- This, not the <plugin version="..."> attribute, is the plugin's version.
+--
+-- MUSHclient parses that attribute as a number and refuses to load the plugin
+-- at all if it has more than one decimal place -- "6.0.1" is rejected outright
+-- with "Too many decimal places". So the attribute can only ever carry
+-- major.minor, and everything that actually compares versions reads this
+-- instead.
+--
+-- Keep it in step with the VERSION file; tests/version_consistency_test.lua
+-- fails the build if they disagree, and checks the attribute is the
+-- major.minor of it.
 SND_VERSION = "6.0.1"
 
 -- snd_version() itself lives in constants.lua, not here: modules are updated by
@@ -2032,7 +2041,10 @@ function callback_update_plugin(retval, page, status, headers, full_status, requ
     end
     -- A string, not tonumber(): tonumber("6.0.1") is nil, which would print
     -- "updating to nil" and error outright when a beta tag is appended below.
-    local upstream_version = string.match(page, '<plugin version="([0-9%.]+)"')
+    -- Read the real version from SND_VERSION, not from the plugin attribute:
+    -- the attribute is numeric and only carries major.minor.
+    local upstream_version = string.match(page, 'SND_VERSION%s*=%s*"([^"]*)"')
+                             or string.match(page, '<plugin version="([0-9%.]+)"')
                              or "(unknown)"
     local pluginVer = snd_version()
     if prevBeta then
@@ -3520,7 +3532,7 @@ function _snd_bootstrap(on_complete)
                     ColourNote("white", "red",
                         "SnD: Failed to download: " .. table.concat(failed, ", "))
                     ColourNote("white", "red",
-                        "SnD: Reload the plugin or check your connection.")
+                        "SnD: Check your connection, then type 'snd reload' to try again.")
                     return
                 end
                 ColourNote("silver", "", "SnD: Download complete. Loading modules...")
@@ -3952,7 +3964,7 @@ function _snd_smart_update(force)
                     local total_ok = #plain + #merged + #sidecars
                     if total_ok > 0 then
                         ColourNote("silver", "",
-                            "SnD: Reload the plugin to apply updates.")
+                            "SnD: Type 'snd reload' to apply the updates.")
                     end
 
                     -- Modules are only half the plugin. The version banner
@@ -3970,6 +3982,46 @@ function _snd_smart_update(force)
 end
 
 -- ─── ALIAS HANDLERS ───────────────────────────────────────────────────────────
+
+-- Alias handler: 'snd version'.
+--
+-- Placed after the bootstrap's locals so it can report where modules are
+-- actually being loaded from -- the single most useful thing to know when
+-- someone says an update did not take effect.
+function snd_show_version()
+    InfoNote("SnD: Search & Destroy v", snd_version())
+
+    local plugin_path = GetPluginInfo(GetPluginID(), 6)
+    if plugin_path and plugin_path ~= "" then
+        InfoNote("SnD: plugin file: ", tostring(plugin_path))
+    end
+
+    local base    = _snd_dev_enabled and _snd_dev_base or _snd_prod_base
+    local present, missing = 0, {}
+    for _, fname in ipairs(_snd_modules) do
+        if _snd_resolve(fname) then
+            present = present + 1
+        else
+            missing[#missing + 1] = fname
+        end
+    end
+    InfoNote("SnD: modules: ", tostring(present), "/", tostring(#_snd_modules),
+             " loaded from ", tostring(base))
+    if _snd_dev_enabled then
+        InfoNote("SnD: developer mode is on (.dev present) -- 'snd update' " ..
+                 "will not replace these files.")
+    end
+    if #missing > 0 then
+        ErrorNote("SnD: missing module(s): ", table.concat(missing, ", "))
+    end
+
+    local seen = last_installed_version
+    if seen and seen ~= "" and seen ~= snd_version() then
+        InfoNote("SnD: changelog last shown for v", tostring(seen),
+                 " -- run 'snd changelog' for what has changed since.")
+    end
+    InfoNote("SnD: run 'snd update' to check for a newer release.")
+end
 
 function xset_snd_update(name, line, wildcards)
     _snd_smart_update(false)
@@ -4045,32 +4097,33 @@ local _snd_subroutines = {
     "roomchars_start", "scan_door_nearby", "scan_empty", "scan_end",
     "scan_location_current_room", "scan_location_nearby_room", "scan_mob", "scan_start",
     "set_current_mob_keyword", "set_mob_keyword", "set_speed", "simulate_cp",
-    "simulate_quest", "sndReload", "snd_debug_cmd", "sp_toggle",
-    "spoof_level", "toggle_automatic_update_checking", "trigger_campaign_rewards_bonus_qp", "trigger_campaign_rewards_gold",
-    "trigger_campaign_rewards_practices", "trigger_campaign_rewards_qp", "trigger_campaign_rewards_tps", "trigger_campaign_rewards_trains",
-    "trigger_damage_done", "trigger_quest_premonition", "trigger_receive_xp", "xcp_arg",
-    "xcp_noarg", "xcp_set_action_mode", "xcp_toggle_quest_targeting", "xdb_clean",
-    "xg_create_window", "xg_window_command", "xmap_rooms_linking_here", "xmapper_move",
-    "xmark_list", "xmobdeaths_cmd", "xq_command", "xrt_noarg",
-    "xrun_to_alias", "xset_area_delete", "xset_area_edit_difficulty", "xset_area_edit_lock",
-    "xset_area_edit_max", "xset_area_edit_min", "xset_area_edit_name", "xset_area_edit_noquest",
-    "xset_area_edit_start", "xset_area_edit_vidblain", "xset_area_list", "xset_area_list_unset",
-    "xset_autonav", "xset_con_overwrite", "xset_debug", "xset_express",
-    "xset_gqalias", "xset_import_area_vars", "xset_index_areas", "xset_level_area",
-    "xset_level_area_reset", "xset_level_buffer", "xset_mark_current", "xset_mark_set",
-    "xset_marks_delete", "xset_marks_edit", "xset_marks_list", "xset_marks_search",
-    "xset_maze", "xset_maze_delete", "xset_maze_list", "xset_mob_clearflags",
-    "xset_mob_difficulty", "xset_mob_express", "xset_mob_levelok", "xset_mob_noaction",
-    "xset_mob_nohunt", "xset_mob_noscan", "xset_mob_nowhere", "xset_mob_priority",
-    "xset_mob_tags", "xset_mob_unpriority", "xset_noexp_tnl", "xset_nx",
-    "xset_nx_check", "xset_pathing", "xset_pathing_express", "xset_quick_kill_command",
-    "xset_rlink", "xset_silent_mode", "xset_snd_force_update", "xset_snd_update",
-    "xset_sound", "xset_table_notes", "xset_table_width", "xset_to_mark",
-    "xset_vidblain", "xset_vidblain_setlevel", "xtest_areadata", "xtest_debug",
-    "xtest_debug_gquest", "xtest_gq_end", "xtest_gq_join", "xtest_gq_kill",
-    "xtest_gq_lose", "xtest_gq_quit", "xtest_gq_start", "xtest_gq_waiting",
-    "xtest_gq_win", "xtest_loadroom", "xtest_mcvars", "xtest_popmsg",
-    "xtest_print_target", "xtest_roomhist", "xtest_set_qt", "xtest_xcp",
+    "simulate_quest", "sndReload", "snd_debug_cmd", "snd_show_version",
+    "sp_toggle", "spoof_level", "toggle_automatic_update_checking", "trigger_campaign_rewards_bonus_qp",
+    "trigger_campaign_rewards_gold", "trigger_campaign_rewards_practices", "trigger_campaign_rewards_qp", "trigger_campaign_rewards_tps",
+    "trigger_campaign_rewards_trains", "trigger_damage_done", "trigger_quest_premonition", "trigger_receive_xp",
+    "xcp_arg", "xcp_noarg", "xcp_set_action_mode", "xcp_toggle_quest_targeting",
+    "xdb_clean", "xg_create_window", "xg_window_command", "xmap_rooms_linking_here",
+    "xmapper_move", "xmark_list", "xmobdeaths_cmd", "xq_command",
+    "xrt_noarg", "xrun_to_alias", "xset_area_delete", "xset_area_edit_difficulty",
+    "xset_area_edit_lock", "xset_area_edit_max", "xset_area_edit_min", "xset_area_edit_name",
+    "xset_area_edit_noquest", "xset_area_edit_start", "xset_area_edit_vidblain", "xset_area_list",
+    "xset_area_list_unset", "xset_autonav", "xset_con_overwrite", "xset_debug",
+    "xset_express", "xset_gqalias", "xset_import_area_vars", "xset_index_areas",
+    "xset_level_area", "xset_level_area_reset", "xset_level_buffer", "xset_mark_current",
+    "xset_mark_set", "xset_marks_delete", "xset_marks_edit", "xset_marks_list",
+    "xset_marks_search", "xset_maze", "xset_maze_delete", "xset_maze_list",
+    "xset_mob_clearflags", "xset_mob_difficulty", "xset_mob_express", "xset_mob_levelok",
+    "xset_mob_noaction", "xset_mob_nohunt", "xset_mob_noscan", "xset_mob_nowhere",
+    "xset_mob_priority", "xset_mob_tags", "xset_mob_unpriority", "xset_noexp_tnl",
+    "xset_nx", "xset_nx_check", "xset_pathing", "xset_pathing_express",
+    "xset_quick_kill_command", "xset_rlink", "xset_silent_mode", "xset_snd_force_update",
+    "xset_snd_update", "xset_sound", "xset_table_notes", "xset_table_width",
+    "xset_to_mark", "xset_vidblain", "xset_vidblain_setlevel", "xtest_areadata",
+    "xtest_debug", "xtest_debug_gquest", "xtest_gq_end", "xtest_gq_join",
+    "xtest_gq_kill", "xtest_gq_lose", "xtest_gq_quit", "xtest_gq_start",
+    "xtest_gq_waiting", "xtest_gq_win", "xtest_loadroom", "xtest_mcvars",
+    "xtest_popmsg", "xtest_print_target", "xtest_roomhist", "xtest_set_qt",
+    "xtest_xcp",
 }
 
 local _snd_stub_notified = false
@@ -4302,6 +4355,8 @@ end
 
         <alias enabled="y" match="^snd force update(?: (?<branch>\S+))?$" script="xset_snd_force_update" regexp="y" sequence="100">
         </alias>
+
+        <alias match="^snd version$" script="snd_show_version" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias enabled="y" match="snd check_update" script="toggle_automatic_update_checking" sequence="100">
         </alias>

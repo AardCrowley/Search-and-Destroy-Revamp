@@ -926,7 +926,7 @@ local TOPICS = {
         summary  = "Update Search & Destroy to the latest version.",
         sections = {
             {
-                text = "Downloads and installs the latest released version of S&D.  If you are running a beta build, 'snd force update beta' fetches the most recent beta.  After updating, the plugin reloads automatically.",
+                text = "Downloads and installs the latest released version of S&D. Modules are fetched first -- only the ones that actually changed -- and then the plugin file itself if a newer release is out. If you are running a beta build, 'snd force update beta' fetches the most recent beta.\n\nWhen only modules changed, type 'snd reload' afterwards to apply them. When the plugin file is replaced it reloads on its own. Your database and settings are never touched by an update.",
             },
         },
         see_also = { "snd reload", "snd changelog", "snd check_update" },
@@ -956,6 +956,23 @@ local TOPICS = {
             },
         },
         see_also = { "snd update" },
+    },
+
+    {
+        key      = "snd version",
+        aliases  = { "version" },
+        category = "System",
+        syntax   = { "snd version" },
+        summary  = "Show which version is installed, and where it loaded from.",
+        sections = {
+            {
+                text    = "Reports the installed version, the plugin file it is running from, and how many modules loaded and out of which folder. That last part is usually the answer when an update appears not to have taken effect -- modules loaded from a developer folder are deliberately never replaced by 'snd update'.",
+            },
+            {
+                text    = "If any module failed to load it is named here, and if the changelog was last shown for an older version it says so. Worth pasting in full when reporting a problem.",
+            },
+        },
+        see_also = { "snd update", "snd changelog", "snd reload" },
     },
 
     {
