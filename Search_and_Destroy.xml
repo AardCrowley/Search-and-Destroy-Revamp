@@ -1811,27 +1811,79 @@ function xtest_findpath(name, line, wildcards)
     end
 
     InfoNote("SnD: findpath probe  src=", tostring(src), "  dst=", tostring(dst))
-    InfoNote("SnD:   CallPlugin present : ", tostring(type(CallPlugin) == "function"))
 
     _snd_mapper_path_raw = nil
+    local t0 = os.clock()
     local ok, rc = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
                          tostring(src), tostring(dst))
+    local t_call = os.clock() - t0
+
     InfoNote("SnD:   pcall ok           : ", tostring(ok))
     InfoNote("SnD:   CallPlugin returned: ", tostring(rc),
-             "   (0 = eOK; 30160 = no such routine)")
+             "  (non-zero is expected -- findpath returns a table, which",
+             " CallPlugin cannot marshal back)")
     InfoNote("SnD:   502 broadcast seen : ", tostring(_snd_mapper_path_raw ~= nil))
-    if _snd_mapper_path_raw then
-        InfoNote("SnD:   raw: ", tostring(_snd_mapper_path_raw):sub(1, 150))
+
+    -- Timed separately so the two numbers are comparable: the mapper searches
+    -- the database, ours walks an in-memory graph, and the whole reason the
+    -- in-memory graph exists is that the first was slow.
+    local t1 = os.clock()
+    local mh = (type(snd_mapper_hops) == "function") and snd_mapper_hops(src, dst) or nil
+    local t_mapper = os.clock() - t1
+
+    local t2 = os.clock()
+    local bh = (type(snd_bfs_hops) == "function") and snd_bfs_hops(src, dst) or nil
+    local t_bfs = os.clock() - t2
+
+    InfoNote("SnD:   mapper hops        : ", tostring(mh),
+             string.format("   (%.3fs)", t_mapper))
+    InfoNote("SnD:   our BFS hops       : ", tostring(bh),
+             string.format("   (%.3fs)", t_bfs))
+
+    if mh and bh then
+        if mh == bh then
+            InfoNote("SnD:   they agree.")
+        else
+            InfoNote("SnD:   they differ by ", tostring(math.abs(mh - bh)),
+                     " hop(s).")
+        end
+    elseif not mh then
+        InfoNote("SnD:   the mapper bridge produced nothing; the BFS stands.")
     end
 
-    local mh = (type(snd_mapper_hops) == "function") and snd_mapper_hops(src, dst) or nil
-    local bh = (type(snd_bfs_hops)    == "function") and snd_bfs_hops(src, dst)    or nil
-    InfoNote("SnD:   mapper hops        : ", tostring(mh))
-    InfoNote("SnD:   our BFS hops       : ", tostring(bh))
-    if mh and bh and mh ~= bh then
-        InfoNote("SnD:   they disagree by ", tostring(math.abs(mh - bh)),
-                 " hop(s) -- try this from a noportal room to see the gap.")
+    -- A hop count only means something once you can see what it counted.
+    local mp = (type(snd_mapper_path) == "function") and snd_mapper_path(src, dst) or nil
+    if mp then
+        InfoNote("SnD:   mapper route:")
+        local n = 0
+        while mp[n + 1] ~= nil do
+            n = n + 1
+            local step = mp[n]
+            InfoNote(string.format("SnD:     %2d. %-22s -> %s",
+                     n, tostring(step.dir), tostring(step.uid)))
+            if n >= 25 then
+                InfoNote("SnD:     ... (truncated)")
+                break
+            end
+        end
     end
+
+    local bp = (type(snd_bfs_path) == "function") and snd_bfs_path(src, dst) or nil
+    if bp then
+        InfoNote("SnD:   our route (rooms only -- the BFS does not track",
+                 " directions, the mapper walks it):")
+        for i, step in ipairs(bp) do
+            InfoNote(string.format("SnD:     %2d. %-22s -> %s",
+                     i, step.via, step.room))
+            if i >= 25 then
+                InfoNote("SnD:     ... (truncated)")
+                break
+            end
+        end
+    end
+
+    InfoNote("SnD: a step marked 'portal/recall (assumed usable here)' is the",
+             " assumption to check -- our search allows it from anywhere.")
 end
 
 function xtest_areadata()

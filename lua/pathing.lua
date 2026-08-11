@@ -458,10 +458,13 @@ function snd_mapper_hops(src, dst)
         DebugNote("SnD: mapper findpath: CallPlugin raised: " .. tostring(rc))
         return nil
     end
-    if rc ~= 0 then
-        DebugNote("SnD: mapper findpath: CallPlugin returned " .. tostring(rc))
-        return nil
-    end
+
+    -- The return code is not a success signal here. findpath returns a table,
+    -- which CallPlugin cannot marshal back across plugin states, so it reports
+    -- an error (30040) even when the routine ran to completion. What it
+    -- broadcasts on channel 502 just before returning is the actual result, so
+    -- that is what decides success.
+    DebugNote("SnD: mapper findpath: CallPlugin returned " .. tostring(rc))
 
     local raw = _snd_mapper_path_raw
     _snd_mapper_path_raw = nil
@@ -476,7 +479,101 @@ function snd_mapper_hops(src, dst)
     if not chunk then return nil end
     local ok2, path = pcall(chunk)
     if not ok2 or type(path) ~= "table" then return nil end
-    return #path
+
+    -- One entry per action, which is what makes this directly comparable to a
+    -- hop count: a portal step is one entry just as a walked exit is, e.g.
+    --   { [1] = { dir = "port 1264387409", uid = "24391" },
+    --     [2] = { dir = "w", uid = "24390" }, ... }
+    --
+    -- Counted rather than taken from #path: the mapper serialises explicit
+    -- integer keys, and # is only defined for a table without holes. A count
+    -- says what is meant and cannot be surprised.
+    local n = 0
+    while path[n + 1] ~= nil do n = n + 1 end
+    return n
+end
+
+-- The route our BFS believes in, step by step, for comparing against the
+-- mapper's during testing.
+--
+-- Diagnostic only. bfs_from() records distances, not routes, because routing is
+-- the mapper's job -- so this walks the same graph again keeping parents. It
+-- marks the step where a portal was assumed, which is the disagreement worth
+-- seeing: every portal destination is seeded at depth 1 regardless of whether
+-- a portal can be used from where the player stands.
+function snd_bfs_path(src, dst)
+    local adj, seed = exit_graph()
+    if not adj then return nil end
+
+    local sid, did = tostring(src), tostring(dst)
+    if sid == did then return {} end
+
+    local parent, how = { [sid] = false }, {}
+    local frontier    = { sid }
+
+    -- Same seeding as bfs_from: portal and recall destinations are reachable
+    -- from anywhere at cost 1.
+    local pending = {}
+    for i = 1, #(seed or {}) do
+        local tr = seed[i]
+        if parent[tr] == nil and tonumber(tr) then
+            parent[tr] = sid
+            how[tr]    = "portal/recall (assumed usable here)"
+            pending[#pending + 1] = tr
+        end
+    end
+
+    local function walk_back(node)
+        local out = {}
+        while node and node ~= sid do
+            table.insert(out, 1, { room = node, via = how[node] or "exit" })
+            node = parent[node]
+        end
+        return out
+    end
+
+    if parent[did] ~= nil then return walk_back(did) end
+
+    local depth = 0
+    while #frontier > 0 and depth < 400 do
+        depth = depth + 1
+        local nxt = {}
+        for _, from in ipairs(frontier) do
+            for _, to in ipairs(adj[from] or {}) do
+                if parent[to] == nil then
+                    parent[to] = from
+                    if to == did then return walk_back(did) end
+                    nxt[#nxt + 1] = to
+                end
+            end
+        end
+        -- Portal destinations join the search with the depth-2 wave, matching
+        -- bfs_from, so rooms behind a portal are not credited one hop short.
+        if depth == 1 then
+            for _, tr in ipairs(pending) do nxt[#nxt + 1] = tr end
+        end
+        frontier = nxt
+    end
+    return nil
+end
+
+-- The mapper's route, parsed, for the same comparison.
+function snd_mapper_path(src, dst)
+    if type(CallPlugin) ~= "function" then return nil end
+    _snd_mapper_path_raw = nil
+    local ok = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
+                     tostring(src), tostring(dst))
+    if not ok then return nil end
+    local raw = _snd_mapper_path_raw
+    _snd_mapper_path_raw = nil
+    if type(raw) ~= "string" then return nil end
+    local body = raw:match("=%s*(%b{})")
+    if not body then return nil end
+    local chunk = loadstring("return " .. body)
+    if not chunk then return nil end
+    local ok2, path = pcall(chunk)
+    if not ok2 or type(path) ~= "table" then return nil end
+    return path
 end
 
 -- Our own BFS answer, for comparing against the mapper's during testing.
