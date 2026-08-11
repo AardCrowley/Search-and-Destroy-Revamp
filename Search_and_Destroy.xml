@@ -1886,6 +1886,123 @@ function xtest_findpath(name, line, wildcards)
              " assumption to check -- our search allows it from anywhere.")
 end
 
+-- Alias handler: 'xtest pathcompare [<roomid> ...]'.
+--
+-- Runs both searches over a set of real destinations and reports where they
+-- disagree, and what each costs. With no arguments it uses the rooms of your
+-- current campaign or gquest targets, which is the case that actually matters:
+-- those are what the routing order is built from.
+--
+-- Two things it is measuring:
+--   * accuracy -- our search allows a portal from anywhere, the mapper does
+--     not, so ours can be short in a noportal area
+--   * cost -- the in-memory graph exists because mapper pathing was slow, so
+--     whether it can be used at all depends on what a call costs
+function xtest_pathcompare(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local src = tonumber(gmcp("room.info.num"))
+    if not src then
+        InfoNote("SnD: no current room from GMCP; cannot compare.")
+        return
+    end
+
+    local dests, labels = {}, {}
+    local arg = tostring(w.rooms or "")
+    if arg ~= "" then
+        for id in arg:gmatch("%d+") do
+            dests[#dests + 1]  = tonumber(id)
+            labels[#labels + 1] = "room " .. id
+        end
+    else
+        for i, t in ipairs(main_target_list or {}) do
+            local rid = tonumber(t.roomid)
+            if rid and rid > 0 and t.is_dead ~= "yes" then
+                dests[#dests + 1]  = rid
+                labels[#labels + 1] = tostring(t.mob or ("target " .. i))
+            end
+        end
+    end
+
+    if #dests == 0 then
+        InfoNote("SnD: nothing to compare. Load a campaign ('cp info') or name",
+                 " rooms: 'xtest pathcompare 24391 455'.")
+        return
+    end
+
+    InfoNote("SnD: comparing ", tostring(#dests), " destination(s) from room ",
+             tostring(src))
+    InfoNote("SnD: ", string.format("%-24s %7s %7s %7s  %s",
+             "target", "mapper", "ours", "diff", "note"))
+
+    local agree, differ, unreachable = 0, 0, 0
+    local t_mapper_total, t_bfs_total = 0, 0
+    local worst, worst_i = 0, nil
+
+    for i, dst in ipairs(dests) do
+        local t0 = os.clock()
+        local mh = snd_mapper_hops(src, dst)
+        t_mapper_total = t_mapper_total + (os.clock() - t0)
+
+        local t1 = os.clock()
+        local bh = snd_bfs_hops(src, dst)
+        t_bfs_total = t_bfs_total + (os.clock() - t1)
+
+        local note = ""
+        local diff = ""
+        if mh and bh then
+            local delta = bh - mh
+            diff = tostring(delta)
+            if delta == 0 then
+                agree = agree + 1
+            else
+                differ = differ + 1
+                if math.abs(delta) > worst then worst, worst_i = math.abs(delta), i end
+                note = (delta < 0) and "ours is shorter" or "ours is longer"
+            end
+        else
+            unreachable = unreachable + 1
+            note = (not mh) and "mapper found none" or "ours found none"
+        end
+
+        InfoNote("SnD: ", string.format("%-24s %7s %7s %7s  %s",
+                 tostring(labels[i]):sub(1, 24),
+                 tostring(mh or "-"), tostring(bh or "-"), diff, note))
+    end
+
+    InfoNote("SnD: ", string.rep("-", 60))
+    InfoNote("SnD: agree ", tostring(agree), ", differ ", tostring(differ),
+             ", no route ", tostring(unreachable))
+    InfoNote("SnD: ", string.format("mapper %.3fs total (%.3fs each), " ..
+             "ours %.3fs total (%.3fs each)",
+             t_mapper_total, t_mapper_total / #dests,
+             t_bfs_total, t_bfs_total / #dests))
+
+    -- Show the worst disagreement in full: the counts say there is a gap, the
+    -- routes say what caused it.
+    if worst_i then
+        local dst = dests[worst_i]
+        InfoNote("SnD: biggest gap is ", tostring(labels[worst_i]),
+                 " (room ", tostring(dst), "):")
+        local mp = snd_mapper_path(src, dst)
+        if mp then
+            local n = 0
+            while mp[n + 1] ~= nil and n < 15 do
+                n = n + 1
+                InfoNote(string.format("SnD:   mapper %2d. %-20s -> %s",
+                         n, tostring(mp[n].dir), tostring(mp[n].uid)))
+            end
+        end
+        local bp = snd_bfs_path(src, dst)
+        if bp then
+            for i, step in ipairs(bp) do
+                if i > 15 then break end
+                InfoNote(string.format("SnD:   ours   %2d. %-20s -> %s",
+                         i, step.via, step.room))
+            end
+        end
+    end
+end
+
 function xtest_areadata()
     local db = assert(sqlite3.open(snd_db_file))
     local sql = "SELECT key, name, minlvl, maxlvl, start_room, noquest, vidblain FROM areas ORDER BY key"
@@ -4248,8 +4365,8 @@ local _snd_subroutines = {
     "xtest_debug", "xtest_debug_gquest", "xtest_findpath", "xtest_gq_end",
     "xtest_gq_join", "xtest_gq_kill", "xtest_gq_lose", "xtest_gq_quit",
     "xtest_gq_start", "xtest_gq_waiting", "xtest_gq_win", "xtest_loadroom",
-    "xtest_mcvars", "xtest_popmsg", "xtest_print_target", "xtest_roomhist",
-    "xtest_set_qt", "xtest_xcp",
+    "xtest_mcvars", "xtest_pathcompare", "xtest_popmsg", "xtest_print_target",
+    "xtest_roomhist", "xtest_set_qt", "xtest_xcp",
 }
 
 local _snd_stub_notified = false
@@ -4662,6 +4779,7 @@ end
 
 
         <!-- xtest commands -->
+        <alias match="^xtest pathcompare(?: (?<rooms>[\d ]+))?$" script="xtest_pathcompare" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^xtest findpath(?: (?<src>\d+))? (?<dst>\d+)$" script="xtest_findpath" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xtest areadata$" script="xtest_areadata" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
