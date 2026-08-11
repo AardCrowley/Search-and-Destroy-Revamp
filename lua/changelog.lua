@@ -16,6 +16,17 @@
 
 local COL = 76      -- content width, matching the help system
 
+-- The running version, as a string.
+--
+-- snd_version() lives in the plugin preamble and is the authority: MUSHclient
+-- stores the plugin's `version` attribute as a number, so PLUGIN_VERSION comes
+-- back as 6 for "6.0.1". The fallback keeps this module loadable on its own,
+-- which is how it is tested.
+local function running_version()
+    if type(snd_version) == "function" then return snd_version() end
+    return tostring(PLUGIN_VERSION or "?")
+end
+
 -- ─── VERSION COMPARISON ──────────────────────────────────────────────────────
 
 -- Parse "6.1" or "v6.1" into { 6, 1 }.  Returns nil for anything that is not a
@@ -332,8 +343,8 @@ local pending = nil
 -- Only ever called after a successful render, so a failed fetch leaves the
 -- setting alone and the notice reappears on the next load.
 local function stamp_seen()
-    last_installed_version = tostring(PLUGIN_VERSION)
-    snd_set_setting("last_installed_version", tostring(PLUGIN_VERSION), true)
+    last_installed_version = running_version()
+    snd_set_setting("last_installed_version", running_version(), true)
 end
 
 function cl_receive(retval, page, status, headers, full_status, request_url)
@@ -370,7 +381,7 @@ function cl_receive(retval, page, status, headers, full_status, request_url)
         -- Nothing to show. On an automatic check that is the normal case and
         -- should stay silent; when the user asked, silence looks like a bug.
         if not req.quiet then
-            InfoNote("SnD: You are up to date (v", tostring(PLUGIN_VERSION),
+            InfoNote("SnD: You are up to date (v", running_version(),
                      ") -- nothing new since v", tostring(since), ".")
         end
         stamp_seen()
@@ -413,7 +424,7 @@ end
 -- problem to read about on every load.
 function cl_check_new_version()
     local seen = last_installed_version
-    if seen and tostring(seen) == tostring(PLUGIN_VERSION) then return end
+    if seen and tostring(seen) == running_version() then return end
 
     if not seen or seen == "" or not cl_version_parse(seen) then
         -- No usable record of what came before. Two situations land here and
@@ -427,7 +438,7 @@ function cl_check_new_version()
         -- alone is the better part of a thousand lines), and printing nothing
         -- loses the one moment the feature exists for. So this points at the
         -- command rather than running it.
-        InfoNote("SnD: Welcome to v", tostring(PLUGIN_VERSION),
+        InfoNote("SnD: Welcome to v", running_version(),
                  " -- run 'snd changelog all' to see what is in it.")
         stamp_seen()
         return

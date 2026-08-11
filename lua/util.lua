@@ -237,7 +237,7 @@ function debug_log_open()
         if not fh then return end
         _debug_log_fh = fh
         local ts  = os.date("%Y-%m-%d %H:%M:%S")
-        local ver = tostring(PLUGIN_VERSION or "?")
+        local ver = snd_version()
         local chr = (type(gmcp) == "function" and gmcp("char.base.name")) or "?"
         fh:write(string.format(
             "\n=== S&D Debug Log  v%s  char:%s  %s ===\n",

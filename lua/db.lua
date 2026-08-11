@@ -822,5 +822,5 @@ function init_plugin_after_load()
         cl_check_new_version()
     end
 
-    InfoNote("SnD: Search & Destroy v" .. PLUGIN_VERSION .. " loaded.")
+    InfoNote("SnD: Search & Destroy v" .. snd_version() .. " loaded.")
 end

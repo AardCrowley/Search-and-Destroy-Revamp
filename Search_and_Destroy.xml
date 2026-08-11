@@ -135,6 +135,24 @@ debug_mode  = "off"
 table_notes = "off"
 table_width = 80
 
+-- ─── VERSION ──────────────────────────────────────────────────────────────────
+--
+-- The authoritative version string, and the one every comparison uses.
+--
+-- MUSHclient stores a plugin's `version` attribute as a NUMBER, so
+-- GetPluginInfo(id, 19) cannot return "6.0.1" -- it comes back as 6, which is
+-- why the load banner read "v6". Anything comparing that against the published
+-- VERSION file sees a permanent mismatch: the update banner would never clear
+-- and the plugin file would be re-fetched on every check.
+--
+-- Keep this in step with the VERSION file and the plugin attribute;
+-- tests/version_consistency_test.lua fails the build if they disagree.
+SND_VERSION = "6.0.1"
+
+-- snd_version() itself lives in constants.lua, not here: modules are updated by
+-- 'snd update' while this file is not, so a module calling a function that
+-- exists only in the XML would break every install running an older plugin.
+
 -- ─── REMOTE SOURCE ────────────────────────────────────────────────────────────
 --
 -- Everything the plugin downloads -- itself, its modules, the manifest, the
@@ -1890,7 +1908,11 @@ function force_update_check(log_no_updates)
     download_version_file(show_update_banner, log_no_updates)
 end
 
+-- The tag the plugin file is fetched from, remembered so a failure can name it.
+_snd_plugin_update_ref = nil
+
 function download_plugin(version, callback)
+    _snd_plugin_update_ref = version
     DebugNote("Downloading plugin version ", version)
     local url = snd_raw_url("Search_and_Destroy.xml", version)
     download_file(url, callback)
@@ -1966,7 +1988,7 @@ function check_version_callback(callback, log_no_updates)
             return
         end
         local upstream_version = Trim(page)
-        if upstream_version ~= tostring(PLUGIN_VERSION) then
+        if upstream_version ~= snd_version() then
             callback(upstream_version)
         elseif log_no_updates then
             InfoNote("Search&Destroy: No new updates available")
@@ -1989,9 +2011,9 @@ function _snd_update_plugin_file_if_stale()
     download_file(snd_raw_url("VERSION"), function(retval, page, status)
         if status ~= 200 or not page then return end
         local latest = Trim(page)
-        if latest == "" or latest == tostring(PLUGIN_VERSION) then return end
+        if latest == "" or latest == snd_version() then return end
         ColourNote("silver", "",
-            "SnD: Plugin file is v" .. tostring(PLUGIN_VERSION) ..
+            "SnD: Plugin file is v" .. snd_version() ..
             ", latest is v" .. latest .. " -- updating it too.")
         do_update(latest)
     end)
@@ -2000,19 +2022,36 @@ end
 function callback_update_plugin(retval, page, status, headers, full_status, request_url)
     if status ~= 200 then
         DebugNote("callback_update_plugin got ", status)
-        ErrorNote("Error while fetching latest plugin version")
+        -- Almost always a missing release tag: the plugin file is fetched from
+        -- "v<version>", not from the branch, so publishing a VERSION bump
+        -- without tagging leaves every install unable to update itself.
+        ErrorNote("SnD: could not fetch the plugin for ",
+                  tostring(_snd_plugin_update_ref), " (HTTP ", tostring(status), ").")
+        ErrorNote("SnD: your modules are current; the plugin file was left alone.")
         return
     end
     -- A string, not tonumber(): tonumber("6.0.1") is nil, which would print
     -- "updating to nil" and error outright when a beta tag is appended below.
     local upstream_version = string.match(page, '<plugin version="([0-9%.]+)"')
                              or "(unknown)"
-    local pluginVer = PLUGIN_VERSION
+    local pluginVer = snd_version()
     if prevBeta then
         pluginVer = pluginVer .. " (Beta " .. prevBeta .. ")"
     end
     if betaVersion then 
         upstream_version = upstream_version .. " (Beta " .. betaVersion .. ")"
+    end
+
+    -- If the downloaded plugin does not actually carry the version that
+    -- VERSION advertised, every future check will find it stale again and
+    -- update-and-reload on every run. Say so rather than let that loop happen
+    -- quietly.
+    local carried = string.match(page, 'SND_VERSION%s*=%s*"([^"]*)"')
+    if carried and _snd_plugin_update_ref
+    and ("v" .. carried) ~= _snd_plugin_update_ref then
+        ErrorNote("SnD: the plugin at ", tostring(_snd_plugin_update_ref),
+                  " reports itself as v", carried,
+                  " -- the release is inconsistent and updates may repeat.")
     end
 
     ImportantNote("Updating from version ", pluginVer, " to ", upstream_version, ". Do not touch anything!")
@@ -2047,7 +2086,7 @@ function show_update_banner(upstream_version)
         "             Current version: ",
         "tomato",
         "",
-        PLUGIN_VERSION,
+        snd_version(),
         "silver",
         "",
         " Latest version: ",
@@ -3658,7 +3697,6 @@ local function _snd_apply_update(fname, new_content, force)
     local backup_path = _snd_prod_base .. fname .. ".backup"
     local sidecar_path = _snd_prod_base .. fname .. ".user.lua"
 
-    local stored_hash  = GetVariable(_snd_hash_key(fname)) or ""
     local local_content = _snd_read_file(prod_path)
 
     -- Helper: write file + orig baseline + update hash.
@@ -3680,31 +3718,27 @@ local function _snd_apply_update(fname, new_content, force)
         return "new"
     end
 
-    -- A file we never downloaded -- no recorded hash, no .orig baseline -- came
-    -- with the release. Treating it as a user edit would send every shipped
-    -- module through the merge path on the first update, leaving a .backup
-    -- beside each one and reporting local changes nobody made.
-    if stored_hash == "" and not _snd_file_exists(orig_path) then
+    -- Whether the user edited this file is decided against the .orig baseline
+    -- written when it was last downloaded -- that is exactly what the baseline
+    -- is for. It used to be decided against a hash kept in a plugin variable,
+    -- which meant a variable that failed to persist turned every shipped
+    -- module into an apparent user edit.
+    --
+    -- No baseline means the file was never downloaded by us: it shipped with
+    -- the release, or was copied in by hand. There is no edit to preserve, so
+    -- it is replaced outright rather than dragged through the merge.
+    local orig_content = _snd_read_file(orig_path)
+    if not orig_content then
         local chunk, err = loadstring(new_content)
         if not chunk then return "download-invalid", err end
         if not commit(new_content) then return "write-error" end
         return "updated"
     end
 
-    local local_hash = _snd_fnv1a(local_content)
-    local user_has_changes = (local_hash ~= stored_hash)
-
-    -- A raw-byte difference might just be blank-line noise (trailing
-    -- newline, an extra blank line from an editor, etc.). Compare against
-    -- the actual downloaded baseline with blank lines stripped from both
-    -- sides before treating it as a real modification worth protecting.
-    if user_has_changes then
-        local orig_for_check = _snd_read_file(orig_path)
-        if orig_for_check
-        and _snd_strip_blank_lines(local_content) == _snd_strip_blank_lines(orig_for_check) then
-            user_has_changes = false
-        end
-    end
+    -- Blank-line noise -- a trailing newline, an editor's extra blank line --
+    -- is not a modification worth protecting.
+    local user_has_changes =
+        _snd_strip_blank_lines(local_content) ~= _snd_strip_blank_lines(orig_content)
 
     if not user_has_changes or force then
         -- No real user changes (or force flag): straight overwrite.
@@ -3715,7 +3749,6 @@ local function _snd_apply_update(fname, new_content, force)
     end
 
     -- User has local changes: attempt 3-way merge (may or may not conflict with upstream).
-    local orig_content = _snd_read_file(orig_path) or local_content
     local merged, sidecar = _snd_merge(orig_content, local_content, new_content)
 
     -- Back up the user's current version before touching anything.
@@ -3799,11 +3832,20 @@ function _snd_smart_update(force)
             -- Never touch files served from the dev path, when it is in use.
             if not spent
             and not (_snd_dev_enabled and _snd_file_exists(_snd_dev_base .. fname)) then
-                local stored_hash  = GetVariable(_snd_hash_key(fname)) or ""
-                local remote_hash  = entry.hash
-                local prod_missing = not _snd_file_exists(_snd_prod_base .. fname)
+                -- Compare the manifest against the bytes actually on disk,
+                -- not against a hash remembered in a plugin variable.
+                --
+                -- The remembered hash was the whole problem: nothing else
+                -- could tell whether it had ever been written, and when it had
+                -- not, every module compared as changed and 'snd update'
+                -- re-downloaded all of them on every single run. Hashing the
+                -- file itself needs no bookkeeping to stay honest -- it is
+                -- right on a fresh install, after a manual copy, after a
+                -- reload, and after a failed write.
+                local local_content = _snd_read_file(_snd_prod_base .. fname)
+                local local_hash    = local_content and _snd_fnv1a(local_content) or ""
 
-                if force or prod_missing or remote_hash ~= stored_hash then
+                if force or not local_content or entry.hash ~= local_hash then
                     to_download[#to_download + 1] = entry
                 end
             end
@@ -3811,6 +3853,11 @@ function _snd_smart_update(force)
 
         if #to_download == 0 then
             ColourNote("silver", "", "SnD: All modules are up to date.")
+            -- Still check the plugin file. Modules being current says nothing
+            -- about the plugin itself, and a release that only touches the XML
+            -- -- which several fixes have been -- changes no module at all.
+            -- Returning here would leave that release permanently unreachable.
+            _snd_update_plugin_file_if_stale()
             return
         end
 

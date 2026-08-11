@@ -3,18 +3,29 @@
 ## Bug Fixes
 
 - **Fixed: `snd update` re-downloaded every file, every time.**
-  It decides what to fetch by comparing the manifest's hash for a module
-  against the hash recorded when that module was last downloaded — but the
-  MUSHclient variable it recorded that hash in was named
-  `_snd_dlhash_<module>.lua`, and variable names may only contain letters,
-  digits and underscores.  The dot made the name illegal, so the write was
-  rejected; nothing checked the return value, the read then came back empty,
-  and every module compared as changed.  Running the command twenty times in a
-  row downloaded all twenty files twenty times.
+  It decided what to fetch by comparing the manifest's hash for a module
+  against a hash remembered from the last download — and that remembered hash
+  was kept in a MUSHclient variable named `_snd_dlhash_<module>.lua`.  Variable
+  names may only contain letters, digits and underscores, so the dot made the
+  name illegal and the write was rejected; nothing checked the return value.
+  The read then came back empty and every module compared as changed, so
+  running the command twenty times downloaded all twenty files twenty times.
 
-  The first update after this fix still fetches everything once — there are no
-  recorded hashes yet, because none were ever successfully stored — and settles
-  from then on.
+  Rather than just fix the name, the remembered hash is gone: the updater now
+  hashes the file **actually on disk** and compares that.  It needs no
+  bookkeeping to stay honest, so it is right on a fresh install, after a manual
+  copy, after a reload, and after a failed write — none of which the old scheme
+  survived.  Whether you have edited a module is likewise decided against the
+  `.orig` baseline written when it was downloaded, which is what that file is
+  for.
+
+- **Fixed: the version was truncated to `6`.**
+  MUSHclient stores a plugin's `version` attribute as a *number*, so a
+  three-part version like `6.0.1` came back as `6` — which is what the load
+  banner showed.  Every comparison against the published `VERSION` therefore
+  saw a permanent mismatch, which on its own would have kept the update banner
+  up forever and re-fetched the plugin file on every check.  The full version
+  is now carried explicitly as a string and used everywhere.
 
 - **Fixed: the update banner never went away.**
   Running `snd update` downloaded the modules, told you to reload, and then
@@ -28,6 +39,17 @@
   The write is also checked before the plugin is reloaded — it used to reload
   regardless, which on a failed write restarts the plugin expecting new code
   and silently gets the old file back.
+
+  The check runs even when no module changed, so a release that only touches
+  the plugin file still reaches you; a missing release tag now says which tag
+  it wanted instead of a bare error; and a release whose plugin file disagrees
+  with its published version is reported rather than quietly updating on every
+  run forever.
+
+  **Existing v6.0 installs need `Search_and_Destroy.xml` replaced by hand once**
+  — the v6.0 plugin file has no way to replace itself.  Modules and sounds
+  already update on their own, and your database is untouched.  From 6.0.1
+  onward the plugin keeps itself current.
 
 - **Fixed: `xset win` ignored what you asked it to do.**
   The alias accepts `on`, `off`, `show`, `hide`, `max`, `expand`, `min` and

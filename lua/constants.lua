@@ -9,6 +9,17 @@ SCHEMA_VERSION = 7
 
 PLUGIN_VERSION = GetPluginInfo(GetPluginID(), 19)
 
+-- The running version as a string.
+--
+-- MUSHclient stores a plugin's `version` attribute as a NUMBER, so
+-- PLUGIN_VERSION comes back as 6 for "6.0.1" -- which is what the load banner
+-- used to print. SND_VERSION, set in the plugin preamble, carries the real
+-- string; this falls back to the numeric one for installs whose plugin file
+-- predates it, since modules update ahead of the XML.
+function snd_version()
+    return tostring(rawget(_G, "SND_VERSION") or PLUGIN_VERSION or "?")
+end
+
 -- ─── PLUGIN IDs ───────────────────────────────────────────────────────────────
 
 -- MUSHclient plugin ID for the GMCP Handler (used by gmcp() and send_gmcp_packet()).

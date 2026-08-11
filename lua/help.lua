@@ -1379,7 +1379,7 @@ end
 local function show_help_index()
     hr(true)
     ColourTell(C_HDR_LABEL, "", "  SEARCH & DESTROY ")
-    ColourTell(C_SEP,       "", "v" .. (PLUGIN_VERSION or "?") .. "  ·  ")
+    ColourTell(C_SEP,       "", "v" .. snd_version() .. "  ·  ")
     ColourNote(C_HDR_TOPIC, "", "Type  xhelp <topic>  for full details")
     hr(true)
     Note("")
