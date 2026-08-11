@@ -919,17 +919,22 @@ local TOPICS = {
     {
         key      = "snd update",
         category = "System",
+        aliases  = { "snd force update" },
         syntax   = {
             "snd update              (update to the latest release)",
-            "snd force update beta   (update to the latest beta build)",
+            "snd force update        (re-download every module regardless)",
         },
         summary  = "Update Search & Destroy to the latest version.",
         sections = {
             {
-                text = "Downloads and installs the latest released version of S&D. Modules are fetched first -- only the ones that actually changed -- and then the plugin file itself if a newer release is out. If you are running a beta build, 'snd force update beta' fetches the most recent beta.\n\nWhen only modules changed, type 'snd reload' afterwards to apply them. When the plugin file is replaced it reloads on its own. Your database and settings are never touched by an update.",
+                text = "Downloads and installs the latest released version of S&D. Modules are fetched first -- only the ones that actually changed -- and then the plugin file itself if a newer release is out.\n\nWhen only modules changed, type 'snd reload' afterwards to apply them. When the plugin file is replaced it reloads on its own. Your database and settings are never touched by an update.",
+            },
+            {
+                heading = "snd force update",
+                text    = "Re-downloads every module whether or not it already matches the published version -- for when an update looks wrong, or a file has been damaged. If you had edited a module yourself, your copy is saved alongside it as <file>.backup before being replaced.",
             },
         },
-        see_also = { "snd reload", "snd changelog", "snd check_update" },
+        see_also = { "snd reload", "snd version", "snd changelog", "snd check_update" },
     },
 
     {

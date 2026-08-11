@@ -205,8 +205,6 @@ versionURL    = snd_raw_url("VERSION")
 CHANGELOG_URL = snd_raw_url("changelog.md")
 
 -- Beta version tags used by the update-check callback.
-betaVersion = nil
-prevBeta    = nil
 
 -- ─── SMALL HELPERS ────────────────────────────────────────────────────────────
 
@@ -2058,12 +2056,6 @@ function callback_update_plugin(retval, page, status, headers, full_status, requ
                              or string.match(page, '<plugin version="([0-9%.]+)"')
                              or "(unknown)"
     local pluginVer = _snd_version_str()
-    if prevBeta then
-        pluginVer = pluginVer .. " (Beta " .. prevBeta .. ")"
-    end
-    if betaVersion then 
-        upstream_version = upstream_version .. " (Beta " .. betaVersion .. ")"
-    end
 
     -- If the downloaded plugin does not actually carry the version that
     -- VERSION advertised, every future check will find it stale again and
@@ -3767,6 +3759,13 @@ local function _snd_apply_update(fname, new_content, force)
         -- No real user changes (or force flag): straight overwrite.
         local chunk, err = loadstring(new_content)
         if not chunk then return "download-invalid", err end
+        -- Forcing over a file the user actually edited: keep their copy. The
+        -- merge path below always backs up before touching anything, and force
+        -- skipping that meant 'snd force update' discarded local edits with
+        -- nothing to recover them from.
+        if user_has_changes then
+            _snd_write_file(backup_path, local_content)
+        end
         if not commit(new_content) then return "write-error" end
         return force and "force-updated" or "updated"
     end
@@ -4038,6 +4037,10 @@ function xset_snd_update(name, line, wildcards)
     _snd_smart_update(false)
 end
 
+-- Alias handler: 'snd force update'.
+--
+-- Re-downloads every module regardless of whether it already matches the
+-- manifest. A local edit is backed up to <file>.backup before being replaced.
 function xset_snd_force_update(name, line, wildcards)
     _snd_smart_update(true)
 end
@@ -4364,7 +4367,7 @@ end
         <alias enabled="y" match="^(?:xhelp|snd help)(?:\s(?<search>.*))?$" regexp="y" script="onHelp" sequence="100">
         </alias>
 
-        <alias enabled="y" match="^snd force update(?: (?<branch>\S+))?$" script="xset_snd_force_update" regexp="y" sequence="100">
+        <alias enabled="y" match="^snd force update$" script="xset_snd_force_update" regexp="y" sequence="100">
         </alias>
 
         <alias match="^snd version$" script="snd_show_version" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>

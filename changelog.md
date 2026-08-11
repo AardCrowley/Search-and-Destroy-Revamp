@@ -34,6 +34,18 @@
   threw mid-update.  The plugin file now reads the version constant directly
   and never depends on a module being loaded.
 
+- **`snd force update` no longer discards your edits.**
+  It re-downloads every module whether or not it already matches — which is the
+  point of it — but it overwrote local edits with no backup at all, while an
+  ordinary update always saves a copy before merging.  A file you had edited is
+  now saved as `<file>.backup` before being replaced.
+
+- **Removed the beta plumbing.**
+  `snd force update beta` was listed in the help, but the branch argument was
+  captured and thrown away — the handler never read it.  Along with two
+  `betaVersion` / `prevBeta` globals that were only ever `nil` and existed to
+  decorate a message.  All gone rather than left looking functional.
+
 - **New: `snd version`.**
   Reports the installed version, the plugin file it is running from, how many
   modules loaded and out of which folder, any module that failed to load, and
