@@ -42,12 +42,19 @@
   Reported by **Obyron**, whose fix this is: capture the flags separately and
   put them back on the front.
 
-- **Consider keeps the mob's colours.**
-  The name was reprinted in a flat silver, discarding the colouring the MUD
+- **Consider keeps the mob's colors.**
+  The name was reprinted in a flat silver, discarding the coloring the MUD
   sent — which is most of what a consider line tells you at a glance.  The
-  name's own span is now cut out of the line's styles with `TruncateStyles`
-  from the Aardwolf package, so a name that changes colour partway keeps
-  doing so.
+  flags and the name are now cut out of the line's own styles with
+  `TruncateStyles` from the Aardwolf package.
+
+  They are located separately, because they are not always next to each
+  other: `A killer bee snickers nervously` puts the name right after the
+  flags, but `(G) No Problem! A busy squirrel is weak compared to you` does
+  not.  Searching for the two joined found nothing in the second kind, so
+  every mob whose message reads that way came out gray while the rest were
+  colored — which looked like particular mobs failing rather than particular
+  messages.
 
 - **Fixed: `consider` reported on a target that no longer existed.**
   "Consider finished; target not visible here" was decided from a flag that
@@ -77,7 +84,7 @@
   another `where N.mob`.  Hence the trailing run of "There is no N.<mob>
   around here."  Disabling the triggers was not enough on its own: MUSHclient
   had already taken those lines off the socket.  Anything sent past the first
-  query is also cancelled with `stop`, so the queued ones do not come back
+  query is also canceled with `stop`, so the queued ones do not come back
   later.  The hunt trick had the same shape and got the same treatment.
 
 - **Express targets are marked in the miniwindow.**
@@ -200,7 +207,7 @@
   disruptive of the two.  A module update now reloads once there is nothing to
   interrupt: no campaign or quest target loaded, no route running, not in
   combat.  Otherwise it says what it is waiting on and leaves the timing to
-  you.  `xset autoreload off` restores the old behaviour.
+  you.  `xset autoreload off` restores the old behavior.
 
   It waits because a reload empties the in-memory campaign state — the target
   list, the current target, the route.  Nothing is lost, since settings, marks,
@@ -312,7 +319,7 @@
   over at half a megabyte, keeping one previous generation.
 
   `snd debug` reports how many notes are held.  For a report where nothing
-  errored but the behaviour was wrong, `snd debug dump` right afterwards
+  errored but the behavior was wrong, `snd debug dump` right afterwards
   captures the run-up.
 
 - **New: `snd dev update`.**
@@ -579,7 +586,7 @@
   `ht_complete` or `ht_fail` matches a line of output.  Quick-where has the
   same shape and was capped at 101 after it sent `where N.mob` forever in
   doors-and-fences areas — the hunt side never got the same guard, so
-  unrecognised output would send `hunt N.mob` without limit.  Both now share a
+  unrecognized output would send `hunt N.mob` without limit.  Both now share a
   single named bound.
 
 - **Per-mob difficulty ratings** (`xset mob difficulty [0-5] [mob]`)
@@ -813,7 +820,7 @@
 - **A stalled `cp info` / `cp check` / `gq info` / `gq check` now says so.**
   All four clear the target list and redraw *before* sending their command, and
   all four passed no timeout callback — so a capture that never completed (server
-  lag, or output whose end tag went unrecognised) left an empty CP/GQ tab with
+  lag, or output whose end tag went unrecognized) left an empty CP/GQ tab with
   nothing said about why, indistinguishable from genuinely having no targets.
   Each now reports what timed out and which command to run again.  Successful
   captures are unaffected: the capture library clears the timeout callback the

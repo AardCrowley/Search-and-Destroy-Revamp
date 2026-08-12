@@ -268,32 +268,57 @@ end
 --
 -- Original MUD line is omitted by the trigger (omit_from_output="y"); this
 -- function always reprints with difficulty coloring and activity tags.
--- Print a mob name in the colours the MUD sent it in.
+-- Print one span of a line in the colours the MUD sent it in.
 --
--- MUSHclient hands a trigger the whole line's styles, and a consider line is a
--- sentence with the mob's name somewhere inside it, so the name's own span has
--- to be cut out of the runs. TruncateStyles does exactly that -- it is part of
--- aardwolf_colors.lua, which the plugin already loads and already leans on for
--- strip_colours, so there is no reason to carry a second implementation of it.
+-- MUSHclient hands a trigger the whole line's styles, so a piece of that line
+-- has to be cut out of the runs. TruncateStyles does exactly that; it comes
+-- from aardwolf_colors.lua, which the plugin already loads and already leans
+-- on for strip_colours.
 --
--- Falls back to plain silver when the name cannot be located in the line,
--- which happens when a trigger reassembles it from more than one capture.
-function snd_tell_mob_name(line, style, mob_name_raw)
-    local runs
-    if type(line) == "string" and mob_name_raw ~= ""
-    and type(style) == "table" and type(TruncateStyles) == "function" then
-        local from = line:find(mob_name_raw, 1, true)
-        if from then
-            runs = TruncateStyles(style, from, from + #mob_name_raw - 1)
-        end
+-- Returns true when it printed something coloured, false when the span could
+-- not be located.
+local function tell_span(line, style, text)
+    if type(line) ~= "string" or type(text) ~= "string" or text == "" then
+        return false
     end
-    if type(runs) ~= "table" or not runs[1] then
-        ColourTell("silver", "", mob_name_raw)
-        return
+    if type(style) ~= "table" or type(TruncateStyles) ~= "function" then
+        return false
     end
+    local from = line:find(text, 1, true)
+    if not from then return false end
+    local runs = TruncateStyles(style, from, from + #text - 1)
+    if type(runs) ~= "table" or not runs[1] then return false end
     for _, r in ipairs(runs) do
         ColourTell(RGBColourToName(r.textcolour),
                    RGBColourToName(r.backcolour), r.text or "")
+    end
+    return true
+end
+
+-- Print a mob's flags and name in the colours they arrived in.
+--
+-- Located separately, because they are not next to each other in every
+-- message. "A killer bee would be easy..." puts the name right after the
+-- flags, so the two together are one contiguous span -- but "(F)(R) Best run
+-- away from A vila while you can!" does not, and looking for the reassembled
+-- "(F)(R) A vila" in that line finds nothing. Searching for one string only
+-- meant the sentence-first messages silently fell back to flat silver, which
+-- is why some mobs in a 'con all' came out coloured and others did not.
+function snd_tell_mob_name(line, style, mob_flags, mob_name)
+    mob_flags = mob_flags or ""
+    mob_name  = mob_name  or ""
+
+    local ok_flags = (mob_flags ~= "") and tell_span(line, style, mob_flags)
+    if mob_flags ~= "" and not ok_flags then
+        ColourTell("silver", "", mob_flags)
+    end
+    -- The separator the flags capture swallowed, so the two do not run
+    -- together when they are printed from different parts of the line.
+    if mob_flags ~= "" and mob_name ~= "" and not mob_flags:match("%s$") then
+        ColourTell("silver", "", " ")
+    end
+    if mob_name ~= "" and not tell_span(line, style, mob_name) then
+        ColourTell("silver", "", mob_name)
     end
 end
 
@@ -337,7 +362,8 @@ function consider_mob_line(name, line, wildcards, style)
     -- Left pad to column 5 (aligns mob name with untagged lines).
     local pad = string.rep(" ", math.max(0, 5 - tag_len))
     ColourTell("silver", "", pad)
-    snd_tell_mob_name(line, style, mob_name_raw)
+    snd_tell_mob_name(line, style, Trim(wildcards.mob_flags or ""),
+                      Trim(wildcards.mob_name or ""))
     -- Pad to column 32 (at least 2 spaces) before the level range.
     local spacer = string.rep(" ", math.max(2, 32 - #mob_name_raw))
     local con_color = snd_get_setting("color_con_" .. con_index, details.color)
