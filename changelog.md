@@ -127,13 +127,14 @@
   areas you never rated to 0 if you want them blank.
 
 - **Fixed: `xcp` walked you to the target twice.**
-  Reported by two players, and it looked intermittent because it needs three
-  things at once: `xset autonav on`, and a target that is either express or
-  resolves to a single room.  `xcp` navigates itself, then runs a room search
-  to fill the `nx` list — and that search has its own autonav branch, which
-  walks you there when it finds exactly one room.  So the display-only search
-  sent you to the room you were already being sent to.  A search run purely
-  for display no longer navigates.
+  It looked intermittent because it needs three things at once: `xset autonav
+  on`, and a target that is either express or resolves to a single room.
+  `xcp` navigates itself, then runs a room search to fill the `nx` list — and
+  that search has its own autonav branch, which walks you there when it finds
+  exactly one room.  So the display-only search sent you to the room you were
+  already being sent to.  A search run purely for display no longer navigates.
+
+  Reported by **Selitos** and **Cephrael**.
 
 - **Fixed: mob tags were ignored for the mob you were actually targeting.**
   `nowhere`, `nohunt` and `noscan` were checked against `current_target.mob`
@@ -147,7 +148,7 @@
   Same cause: it gated on `current_target.mob`, so it answered "'kw' has no
   current target" no matter what you had targeted.
 
-  Reported by **Crowley**, after `xcp` onto a barbarian trebuchet.
+  Reported by **Cephrael**, after `xcp` onto a barbarian trebuchet.
 
 - **Express targets are marked again.**
   They carry a leading `*` in the target list, as they did in 5.99, with a
