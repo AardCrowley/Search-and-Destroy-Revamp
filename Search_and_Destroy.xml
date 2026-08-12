@@ -270,9 +270,21 @@ end
 -- this -- the global simply stays nil and the BFS is used instead.
 _snd_mapper_path_raw = nil
 
+-- Every leg of the route, not just the last.
+--
+-- findpath broadcasts once per path it completes -- but when the source room
+-- forbids portalling it does not complete one. It walks to the nearest room it
+-- can jump from, calls itself for that leg, calls itself again for the rest,
+-- concatenates the two and returns WITHOUT broadcasting the total. Only the
+-- recursive calls broadcast. Keeping just the last one therefore measured the
+-- second leg alone and silently dropped the walk out -- in exactly the case
+-- the walk-out is the thing being measured.
+_snd_mapper_path_parts = {}
+
 function OnPluginBroadcast(msg, id, name, text)
     if msg == 502 and id == PLUGIN_ID_MAPPER then
         _snd_mapper_path_raw = text
+        _snd_mapper_path_parts[#_snd_mapper_path_parts + 1] = text
     end
 
     if id == _GMCP_HANDLER_ID then
@@ -2029,14 +2041,22 @@ function xtest_pathcompare(name, line, wildcards)
 
     local agree, differ, unreachable = 0, 0, 0
     local np_differs = 0
+    local routes, multi_leg = {}, 0
+    local slowest, slowest_i = 0, nil
     local portalled = 0
     local t_mapper_total, t_bfs_total = 0, 0
     local worst, worst_i = 0, nil
 
     for i, dst in ipairs(dests) do
         local t0 = os.clock()
-        local mh = snd_mapper_hops(src, dst)
-        t_mapper_total = t_mapper_total + (os.clock() - t0)
+        -- The route AND its length from one call, so the summary and the
+        -- route printed underneath can never be two different answers.
+        local mroute, mh, mlegs = snd_mapper_route(src, dst)
+        local t_this = os.clock() - t0
+        t_mapper_total = t_mapper_total + t_this
+        if t_this > slowest then slowest, slowest_i = t_this, i end
+        routes[i] = mroute
+        if mlegs and mlegs > 1 then multi_leg = multi_leg + 1 end
 
         -- The same route with portals forbidden. If this is larger than the
         -- portal-allowed answer, portals genuinely shorten the trip -- and in
@@ -2116,6 +2136,19 @@ function xtest_pathcompare(name, line, wildcards)
                  " and this run proves nothing about accuracy. Use",
                  " 'xtest noportal' to find a room where it would.")
     end
+    if multi_leg > 0 then
+        InfoNote("SnD: ", tostring(multi_leg), " of ", tostring(#dests),
+                 " mapper routes came back in more than one leg -- it had to",
+                 " walk somewhere it could portal from before portalling.",
+                 " That walk is the part our count leaves out.")
+    end
+    if slowest > 2.0 then
+        InfoNote("SnD: slowest mapper call was ", string.format("%.1fs", slowest),
+                 " (", tostring(labels[slowest_i] or "?"), "). findpath",
+                 " searches exhaustively before giving up, and it blocks the",
+                 " client while it does -- which is why it is a diagnostic",
+                 " here and not something to call while routing.")
+    end
     InfoNote("SnD: ", string.format("mapper %.3fs total (%.3fs each), " ..
              "ours %.3fs total (%.3fs each)",
              t_mapper_total, t_mapper_total / #dests,
@@ -2127,7 +2160,7 @@ function xtest_pathcompare(name, line, wildcards)
         local dst = dests[worst_i]
         InfoNote("SnD: biggest gap is ", tostring(labels[worst_i]),
                  " (room ", tostring(dst), "):")
-        local mp = snd_mapper_path(src, dst)
+        local mp = routes[worst_i]
         if mp then
             local n = 0
             while mp[n + 1] ~= nil and n < 15 do

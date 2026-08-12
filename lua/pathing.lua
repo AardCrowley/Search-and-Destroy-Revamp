@@ -447,16 +447,31 @@ end
 --
 -- NOT VERIFIED IN A LIVE CLIENT. Nothing depends on it yet: it returns nil on
 -- any doubt, and hop_count() keeps using the BFS until this is proven.
+-- One findpath call, returning both the route and its length.
+--
+-- These used to be two functions making two separate calls and reading the
+-- result two different ways -- one summing every broadcast leg, the other
+-- keeping only the last. A comparison could then report 44 hops beside a
+-- two-step route and both numbers were "right" for their own reading, which
+-- makes the output impossible to reason about. One call, one answer.
+--
 -- noportals/norecalls are findpath's own arguments, passed through so the
--- comparison can ask the same question twice: once with portals allowed and
--- once without. That difference is the price of our shortcut -- our search
--- treats every portal destination as one hop from anywhere, including from a
--- room that forbids portalling, where the real answer is "walk out first".
-function snd_mapper_hops(src, dst, noportals, norecalls)
+-- same route can be asked for twice: with portals allowed and without.
+--
+-- Why legs have to be summed: when the source room forbids portalling,
+-- findpath walks to the nearest room it can jump from, calls itself for that
+-- leg, calls itself again for the rest, concatenates the two and returns
+-- WITHOUT broadcasting the total. Only the recursive calls broadcast. Reading
+-- just the last one measures the second leg and silently drops the walk out --
+-- in exactly the case the walk out is what is being measured.
+function snd_mapper_route(src, dst, noportals, norecalls)
     if type(CallPlugin) ~= "function" then return nil end
     if type(PLUGIN_ID_MAPPER) ~= "string" then return nil end
 
     _snd_mapper_path_raw = nil
+    local have_parts = (type(_snd_mapper_path_parts) == "table")
+    if have_parts then _snd_mapper_path_parts = {} end
+
     local ok, rc = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
                          tostring(src), tostring(dst),
                          noportals and "1" or "", norecalls and "1" or "")
@@ -465,38 +480,67 @@ function snd_mapper_hops(src, dst, noportals, norecalls)
         return nil
     end
 
-    -- The return code is not a success signal here. findpath returns a table,
-    -- which CallPlugin cannot marshal back across plugin states, so it reports
-    -- an error (30040) even when the routine ran to completion. What it
-    -- broadcasts on channel 502 just before returning is the actual result, so
-    -- that is what decides success.
-    DebugNote("SnD: mapper findpath: CallPlugin returned " .. tostring(rc))
-
-    local raw = _snd_mapper_path_raw
+    -- The return code is not a success signal: findpath returns a table, which
+    -- CallPlugin cannot marshal across plugin states, so it reports an error
+    -- (30040) even when the routine ran to completion. The broadcast is the
+    -- result.
+    local parts
+    if have_parts and #_snd_mapper_path_parts > 0 then
+        parts = _snd_mapper_path_parts
+    else
+        parts = { _snd_mapper_path_raw }
+    end
     _snd_mapper_path_raw = nil
-    if type(raw) ~= "string" or raw == "" then
+
+    -- The legs are disjoint -- a call that recurses broadcasts nothing of its
+    -- own -- so concatenating them reconstructs the route rather than
+    -- double-counting it.
+    local route, seen = {}, 0
+    for _, raw in ipairs(parts) do
+        if type(raw) == "string" and raw ~= "" then
+            local body = raw:match("=%s*(%b{})")
+            if body then
+                local chunk = loadstring("return " .. body)
+                if chunk then
+                    local ok2, path = pcall(chunk)
+                    if ok2 and type(path) == "table" then
+                        seen = seen + 1
+                        -- One entry per action, which is what makes this
+                        -- comparable to a hop count: a portal step counts as
+                        -- one just as a walked exit does. Counted rather than
+                        -- taken from #path -- the mapper serialises explicit
+                        -- integer keys, and # is only defined for a table
+                        -- without holes.
+                        local n = 0
+                        while path[n + 1] ~= nil do
+                            n = n + 1
+                            route[#route + 1] = path[n]
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if seen == 0 then
         DebugNote("SnD: mapper findpath: no path broadcast arrived")
         return nil
     end
+    if seen > 1 then
+        DebugNote("SnD: mapper findpath: " .. tostring(seen) .. " legs, " ..
+                  tostring(#route) .. " hops total")
+    end
+    return route, #route, seen
+end
 
-    local body = raw:match("=%s*(%b{})")
-    if not body then return nil end
-    local chunk = loadstring("return " .. body)
-    if not chunk then return nil end
-    local ok2, path = pcall(chunk)
-    if not ok2 or type(path) ~= "table" then return nil end
-
-    -- One entry per action, which is what makes this directly comparable to a
-    -- hop count: a portal step is one entry just as a walked exit is, e.g.
-    --   { [1] = { dir = "port 1264387409", uid = "24391" },
-    --     [2] = { dir = "w", uid = "24390" }, ... }
-    --
-    -- Counted rather than taken from #path: the mapper serialises explicit
-    -- integer keys, and # is only defined for a table without holes. A count
-    -- says what is meant and cannot be surprised.
-    local n = 0
-    while path[n + 1] ~= nil do n = n + 1 end
+function snd_mapper_hops(src, dst, noportals, norecalls)
+    local _, n = snd_mapper_route(src, dst, noportals, norecalls)
     return n
+end
+
+function snd_mapper_path(src, dst, noportals, norecalls)
+    local route = snd_mapper_route(src, dst, noportals, norecalls)
+    return route
 end
 
 -- The route our BFS believes in, step by step, for comparing against the
@@ -564,23 +608,6 @@ function snd_bfs_path(src, dst)
 end
 
 -- The mapper's route, parsed, for the same comparison.
-function snd_mapper_path(src, dst)
-    if type(CallPlugin) ~= "function" then return nil end
-    _snd_mapper_path_raw = nil
-    local ok = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
-                     tostring(src), tostring(dst))
-    if not ok then return nil end
-    local raw = _snd_mapper_path_raw
-    _snd_mapper_path_raw = nil
-    if type(raw) ~= "string" then return nil end
-    local body = raw:match("=%s*(%b{})")
-    if not body then return nil end
-    local chunk = loadstring("return " .. body)
-    if not chunk then return nil end
-    local ok2, path = pcall(chunk)
-    if not ok2 or type(path) ~= "table" then return nil end
-    return path
-end
 
 -- Our own BFS answer, for comparing against the mapper's during testing.
 function snd_bfs_hops(src, dst)
