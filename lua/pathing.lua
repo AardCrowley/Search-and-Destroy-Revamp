@@ -447,13 +447,19 @@ end
 --
 -- NOT VERIFIED IN A LIVE CLIENT. Nothing depends on it yet: it returns nil on
 -- any doubt, and hop_count() keeps using the BFS until this is proven.
-function snd_mapper_hops(src, dst)
+-- noportals/norecalls are findpath's own arguments, passed through so the
+-- comparison can ask the same question twice: once with portals allowed and
+-- once without. That difference is the price of our shortcut -- our search
+-- treats every portal destination as one hop from anywhere, including from a
+-- room that forbids portalling, where the real answer is "walk out first".
+function snd_mapper_hops(src, dst, noportals, norecalls)
     if type(CallPlugin) ~= "function" then return nil end
     if type(PLUGIN_ID_MAPPER) ~= "string" then return nil end
 
     _snd_mapper_path_raw = nil
     local ok, rc = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
-                         tostring(src), tostring(dst))
+                         tostring(src), tostring(dst),
+                         noportals and "1" or "", norecalls and "1" or "")
     if not ok then
         DebugNote("SnD: mapper findpath: CallPlugin raised: " .. tostring(rc))
         return nil

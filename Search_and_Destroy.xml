@@ -1891,6 +1891,68 @@ function xtest_findpath(name, line, wildcards)
              " assumption to check -- our search allows it from anywhere.")
 end
 
+-- Whether a room forbids portalling or recalling, straight from the mapper.
+--
+-- This is the whole point of the comparison: our search seeds every portal
+-- destination at depth 1 from anywhere, so in a room that permits portals we
+-- and the mapper agree trivially and the run proves nothing. The mapper only
+-- has to do something different -- walk out to somewhere it can portal from --
+-- when the room forbids it. Reporting the flags means the run says whether it
+-- was the decisive test, instead of leaving it to be inferred from the fact
+-- that every answer came back identical again.
+local function _snd_room_portal_flags(uid)
+    if not mapper_db_file or not uid then return nil end
+    local ok, np, nr = pcall(function()
+        local db = sqlite3.open(mapper_db_file)
+        if not db then return nil end
+        local a, b
+        for row in db:nrows("SELECT noportal, norecall FROM rooms WHERE uid=" ..
+                            fixsql(tostring(uid)) .. " LIMIT 1") do
+            a, b = tonumber(row.noportal) or 0, tonumber(row.norecall) or 0
+        end
+        db:close()
+        return a, b
+    end)
+    if not ok then return nil end
+    return np, nr
+end
+
+-- Alias handler: 'xtest noportal'. Finds rooms to run the comparison from.
+function xtest_noportal(name, line, wildcards)
+    if not mapper_db_file then
+        InfoNote("SnD: no mapper database; cannot look for noportal rooms.")
+        return
+    end
+    local here = gmcp("room.info.zone") or ""
+    local rows, err = {}, nil
+    local ok = pcall(function()
+        local db = sqlite3.open(mapper_db_file)
+        for row in db:nrows(
+            "SELECT uid, name, area FROM rooms WHERE noportal=1 AND area=" ..
+            fixsql(here) .. " ORDER BY uid LIMIT 20") do
+            rows[#rows + 1] = row
+        end
+        db:close()
+    end)
+    if not ok then
+        InfoNote("SnD: could not read the mapper database.")
+        return
+    end
+    if #rows == 0 then
+        InfoNote("SnD: no noportal rooms recorded in this area (", here, ").")
+        InfoNote("SnD: 'xtest pathcompare' only tells you something new from a",
+                 " room where portalling is blocked -- try a clan hall area,",
+                 " a quest zone, or anywhere the mapper has flagged noportal.")
+        return
+    end
+    InfoNote("SnD: noportal rooms in ", here, " -- run 'xtest pathcompare'",
+             " standing in one:")
+    for _, r in ipairs(rows) do
+        InfoNote("SnD: ", string.format("  %-8s %s", tostring(r.uid),
+                 tostring(r.name)))
+    end
+end
+
 -- Alias handler: 'xtest pathcompare [<roomid> ...]'.
 --
 -- Runs both searches over a set of real destinations and reports where they
@@ -1954,12 +2016,19 @@ function xtest_pathcompare(name, line, wildcards)
         return
     end
 
+    local np, nr = _snd_room_portal_flags(src)
+    local flagstr = ""
+    if np ~= nil then
+        flagstr = (np == 1 and " [noportal]" or "") .. (nr == 1 and " [norecall]" or "")
+        if flagstr == "" then flagstr = " [portals allowed]" end
+    end
     InfoNote("SnD: comparing ", tostring(#dests), " destination(s) from room ",
-             tostring(src))
-    InfoNote("SnD: ", string.format("%-34s %7s %7s %7s  %s",
-             "target", "mapper", "ours", "diff", "via"))
+             tostring(src), flagstr)
+    InfoNote("SnD: ", string.format("%-30s %7s %7s %7s %7s  %s",
+             "target", "mapper", "mapNP", "ours", "diff", "via"))
 
     local agree, differ, unreachable = 0, 0, 0
+    local np_differs = 0
     local portalled = 0
     local t_mapper_total, t_bfs_total = 0, 0
     local worst, worst_i = 0, nil
@@ -1968,6 +2037,13 @@ function xtest_pathcompare(name, line, wildcards)
         local t0 = os.clock()
         local mh = snd_mapper_hops(src, dst)
         t_mapper_total = t_mapper_total + (os.clock() - t0)
+
+        -- The same route with portals forbidden. If this is larger than the
+        -- portal-allowed answer, portals genuinely shorten the trip -- and in
+        -- a room that blocks them, that gap is exactly how much our count
+        -- understates the walk. If it is identical everywhere, the mapper is
+        -- not applying the restriction either and neither of us models it.
+        local mnp = snd_mapper_hops(src, dst, true)
 
         local t1 = os.clock()
         local bh = snd_bfs_hops(src, dst)
@@ -2002,9 +2078,11 @@ function xtest_pathcompare(name, line, wildcards)
             note = (not mh) and "mapper found none" or "ours found none"
         end
 
-        InfoNote("SnD: ", string.format("%-34s %7s %7s %7s  %s",
-                 tostring(labels[i]):sub(1, 34),
-                 tostring(mh or "-"), tostring(bh or "-"), diff, note))
+        if mnp and mh and mnp ~= mh then np_differs = np_differs + 1 end
+        InfoNote("SnD: ", string.format("%-30s %7s %7s %7s %7s  %s",
+                 tostring(labels[i]):sub(1, 30),
+                 tostring(mh or "-"), tostring(mnp or "-"),
+                 tostring(bh or "-"), diff, note))
     end
 
     InfoNote("SnD: ", string.rep("-", 60))
@@ -2014,8 +2092,29 @@ function xtest_pathcompare(name, line, wildcards)
         InfoNote("SnD: ", tostring(portalled), " of ", tostring(#dests),
                  " of our answers start with a portal, which our search allows",
                  " from anywhere -- those counts do not depend on where you are")
-        InfoNote("SnD: standing. Run this again from a noportal room: ours",
-                 " should not change, the mapper's should.")
+        InfoNote("SnD: standing.")
+    end
+    -- Say plainly whether this run settled anything. Agreement from a room
+    -- that permits portals is the expected result and not evidence either
+    -- way: both sides portal, so both count the same. The comparison only
+    -- has teeth where the mapper is forced to walk out first.
+    if np_differs == 0 then
+        InfoNote("SnD: mapNP matches mapper on every row: forbidding portals",
+                 " changed nothing, so no answer here actually depended on one",
+                 " and this run cannot separate the two methods.")
+    else
+        InfoNote("SnD: mapNP differs on ", tostring(np_differs), " row(s):",
+                 " those routes really do use a portal. In a room that blocks",
+                 " portalling, that gap is how much our count understates it.")
+    end
+    if np == 1 then
+        InfoNote("SnD: This room is noportal per the mapper -- if mapper and",
+                 " ours still agree, the mapper is not applying the room's own",
+                 " flag either, and the shortcut costs nothing in practice.")
+    elseif np ~= nil then
+        InfoNote("SnD: Portals are allowed here, so agreement was guaranteed",
+                 " and this run proves nothing about accuracy. Use",
+                 " 'xtest noportal' to find a room where it would.")
     end
     InfoNote("SnD: ", string.format("mapper %.3fs total (%.3fs each), " ..
              "ours %.3fs total (%.3fs each)",
@@ -4481,7 +4580,8 @@ local _snd_subroutines = {
     "xtest_areadata", "xtest_debug", "xtest_debug_gquest", "xtest_findpath",
     "xtest_gq_end", "xtest_gq_join", "xtest_gq_kill", "xtest_gq_lose",
     "xtest_gq_quit", "xtest_gq_start", "xtest_gq_waiting", "xtest_gq_win",
-    "xtest_loadroom", "xtest_mcvars", "xtest_pathcompare", "xtest_popmsg",
+    "xtest_loadroom", "xtest_mcvars", "xtest_noportal", "xtest_pathcompare",
+    "xtest_popmsg",
     "xtest_print_target", "xtest_roomhist", "xtest_set_qt", "xtest_xcp",
 }
 
@@ -4897,6 +4997,7 @@ end
 
 
         <!-- xtest commands -->
+        <alias match="^xtest noportal$" script="xtest_noportal" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^xtest pathcompare(?: (?<rooms>[\d ]+))?$" script="xtest_pathcompare" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^xtest findpath(?: (?<src>\d+))? (?<dst>\d+)$" script="xtest_findpath" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
