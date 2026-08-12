@@ -250,6 +250,11 @@ function init_xml_settings()
     -- by the changelog code but never read back, so it was nil on every load
     -- and the "what changed since your version" path could never run.
     last_installed_version      = snd_get_setting("last_installed_version",   "")
+    -- Which branch the last update came from. The version string alone cannot
+    -- answer this: a development build is not obliged to carry a distinct
+    -- version, so someone running 'snd dev update' against an unbumped tree
+    -- would look identical to a release install.
+    snd_update_channel          = snd_get_setting("snd_update_channel",       "")
     apply_xset_gqalias()
 end
 
@@ -4140,6 +4145,14 @@ function _snd_smart_update(force, ref)
             return
         end
 
+        -- Recorded here rather than on entry: a fetch that never returned a
+        -- usable manifest did not put anyone on that branch, and claiming
+        -- otherwise would mislabel the install for good.
+        if type(snd_set_setting) == "function" then
+            snd_update_channel = ref or "release"
+            snd_set_setting("snd_update_channel", snd_update_channel)
+        end
+
         -- Determine which files need downloading.
         local to_download = {}
 
@@ -4307,6 +4320,21 @@ end
 -- someone says an update did not take effect.
 function snd_show_version()
     InfoNote("SnD: Search & Destroy v", _snd_version_str())
+
+    -- Two independent signals, because either can be absent. A version may
+    -- carry a "-dev" suffix without the install having ever pulled from the
+    -- branch, and an install can track the branch at a version that says
+    -- nothing. Whichever is present, say so plainly.
+    local ver = _snd_version_str()
+    local chan = rawget(_G, "snd_update_channel")
+    if ver:find("-", 1, true) or (chan and chan ~= "" and chan ~= "release") then
+        ColourNote("white", "darkgreen",
+            "SnD: This is a DEVELOPMENT build" ..
+            ((chan and chan ~= "" and chan ~= "release")
+                and (" tracking the '" .. tostring(chan) .. "' branch")
+                or "") ..
+            " -- expect rough edges, and report what you find.")
+    end
 
     local plugin_path = GetPluginInfo(GetPluginID(), 6)
     if plugin_path and plugin_path ~= "" then

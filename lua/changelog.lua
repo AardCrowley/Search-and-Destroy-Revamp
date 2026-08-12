@@ -38,11 +38,15 @@ function cl_version_parse(s)
         if s == nil then return nil end
         s = tostring(s)
     end
-    local body = s:match("^%s*[Vv]?([%d%.]+)%s*$")
+    -- An optional pre-release suffix: 6.0.2-dev, 6.1-rc1. Rejecting these
+    -- would push anyone running one onto the "no record of your version" path
+    -- and deny them a changelog diff entirely.
+    local body, pre = s:match("^%s*[Vv]?([%d%.]+)%-?([%w%.]*)%s*$")
     if not body then return nil end
     local parts = {}
     for n in body:gmatch("(%d+)") do parts[#parts + 1] = tonumber(n) end
     if #parts == 0 then return nil end
+    parts.pre = (pre ~= "") and pre or nil
     return parts
 end
 
@@ -53,6 +57,14 @@ function cl_version_compare(a, b)
     for i = 1, n do
         local x, y = a[i] or 0, b[i] or 0
         if x ~= y then return (x < y) and -1 or 1 end
+    end
+    -- Same numbers: a pre-release comes BEFORE the release it leads to, so
+    -- 6.0.2-dev < 6.0.2. Otherwise someone on a development build would be
+    -- told they were already up to date when the real release appeared.
+    if a.pre and not b.pre then return -1 end
+    if b.pre and not a.pre then return 1 end
+    if a.pre and b.pre and a.pre ~= b.pre then
+        return (a.pre < b.pre) and -1 or 1
     end
     return 0
 end
@@ -92,12 +104,23 @@ end
 --   "unknown" -- `since` is unparseable, so only the newest section is shown
 --                rather than replaying the entire history at someone
 function cl_sections_since(sections, since)
-    if not cl_version_parse(since) then
+    local here = cl_version_parse(since)
+    if not here then
         return (sections[1] and { sections[1] }) or {}, "unknown"
     end
+    -- The changelog on the release branch carries the section for whatever is
+    -- being worked on next, so a released install would otherwise be shown
+    -- fixes that are not in anything it can install -- and would go looking
+    -- for behaviour it does not have. Anyone already running a pre-release
+    -- does want to see them.
+    local want_pre = here.pre ~= nil
     local out = {}
     for _, s in ipairs(sections) do
-        if cl_version_newer(s.version, since) then out[#out + 1] = s end
+        local v = cl_version_parse(s.version)
+        if cl_version_newer(s.version, since)
+        and (want_pre or not (v and v.pre)) then
+            out[#out + 1] = s
+        end
     end
     return out, (#out == 0) and "current" or "ok"
 end

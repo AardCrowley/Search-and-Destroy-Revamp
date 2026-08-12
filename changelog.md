@@ -1,3 +1,54 @@
+# v6.0.2-dev
+
+**A development build.**  Nothing here is in a public release yet.  Run
+`snd version` to see whether you are on one of these.
+
+## Bug Fixes
+
+- **Fixed: `cp check` after a reload reported an internal error.**
+  It answered "build_main_target_list: unknown area_or_room value: none",
+  naming a variable no player has reason to have heard of.  The campaign type
+  is parsed from `cp info` output and does not survive a reload, so the check
+  had nothing to work from.  It now says to run `cp info`, and why.
+
+## New
+
+- **Updates now apply themselves, when nothing is in progress.**
+  Fetching new modules did nothing until the plugin reloaded, and it left that
+  to you — while replacing the plugin file reloaded unasked, which is the more
+  disruptive of the two.  A module update now reloads once there is nothing to
+  interrupt: no campaign or quest target loaded, no route running, not in
+  combat.  Otherwise it says what it is waiting on and leaves the timing to
+  you.  `xset autoreload off` restores the old behaviour.
+
+  It waits because a reload empties the in-memory campaign state — the target
+  list, the current target, the route.  Nothing is lost, since settings, marks,
+  keywords and history live in the database.
+
+- **The upgrade from v6.0 no longer needs a manual step.**
+  v6.0's plugin file has no way to replace itself, so v6.0.1 had to be
+  installed by replacing `Search_and_Destroy.xml` by hand.  Modules do still
+  update on a v6.0 install, though, so the upgrade is driven from a module
+  instead: `snd update` fetches the new modules, and on the next load one of
+  them notices the plugin file is behind, fetches it and reloads.  Everything
+  it needs already exists in v6.0's plugin file.  Your database, settings,
+  marks and keywords are untouched throughout.
+
+- **`snd version` says when you are on a development build.**
+  Versions may now carry a suffix — `6.0.2-dev` — and a pre-release sorts
+  *below* the release it leads to, so a tester is not left thinking they are
+  current once the real release ships.  The branch an update came from is
+  recorded too, since a development branch is not obliged to change its
+  version at all and would otherwise be indistinguishable from a release.
+
+- **`xtest pathcompare` compares our routing against the mapper's.**
+  Runs both over your current target list and prints the hop counts side by
+  side, with the time each took.  It also marks which answers depend on a
+  portal: our route seeds every portal destination as one hop from anywhere,
+  which is why two runs from different rooms can produce identical counts —
+  they are not "distance from you" but "one, plus the distance from the
+  nearest portal exit".
+
 # v6.0.1
 
 ## Bug Fixes
@@ -71,24 +122,6 @@
   `betaVersion` / `prevBeta` globals that were only ever `nil` and existed to
   decorate a message.  All gone rather than left looking functional.
 
-- **Updates now apply themselves, when nothing is in progress.**
-  Fetching new modules did nothing until the plugin reloaded, and it left that
-  to you — while replacing the plugin file reloaded unasked, which is the more
-  disruptive of the two.  A module update now reloads once there is nothing to
-  interrupt: no campaign or quest target loaded, no route running, not in
-  combat.  Otherwise it says what it is waiting on and leaves the timing to
-  you.  `xset autoreload off` restores the old behaviour.
-
-  It waits because a reload empties the in-memory campaign state — the target
-  list, the current target, the route.  Nothing is lost, since settings, marks,
-  keywords and history live in the database.
-
-- **Fixed: `cp check` after a reload reported an internal error.**
-  It answered "build_main_target_list: unknown area_or_room value: none",
-  naming a variable no player has reason to have heard of.  The campaign type
-  is parsed from `cp info` output and does not survive a reload, so the check
-  had nothing to work from.  It now says to run `cp info`, and why.
-
 - **New: an always-on trace buffer.**
   Debug logging only ever helped if it was already switched on — and it never
   is the first time something goes wrong.  Every debug and error note is now
@@ -148,12 +181,9 @@
   with its published version is reported rather than quietly updating on every
   run forever.
 
-  **No manual step after all.**  The plugin file cannot replace itself on
-  v6.0, but modules still update there — so the upgrade is driven from a
-  module instead.  A v6.0 install running `snd update` gets the new modules,
-  and on the next load one of them notices the plugin file is behind, fetches
-  it and reloads.  Everything it needs already exists in v6.0's plugin file.
-  Your database, settings, marks and keywords are untouched throughout.
+  **Existing v6.0 installs need `Search_and_Destroy.xml` replaced by hand once**
+  — the v6.0 plugin file has no way to replace itself.  Modules and sounds
+  already update on their own, and your database is untouched.
 
 - **Fixed: `xset win` ignored what you asked it to do.**
   The alias accepts `on`, `off`, `show`, `hide`, `max`, `expand`, `min` and
