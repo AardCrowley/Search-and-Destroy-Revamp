@@ -190,8 +190,12 @@ end
 -- graph is held for the life of this Lua state; pathing_graph_invalidate()
 -- forces a rebuild.
 local _graph      = nil   -- { [fromuid] = { touid, ... } }  (strings)
-local _graph_seed = nil   -- portal destinations (fromuid='*')
+local _graph_seed = nil   -- portal + recall destinations, together
 local _graph_key  = nil
+local _graph_pseed    = nil   -- portal destinations only (fromuid='*')
+local _graph_rseed    = nil   -- recall destinations only (fromuid='**')
+local _graph_noportal = nil   -- { [uid] = true } for rooms that forbid portals
+local _graph_norecall = nil   -- { [uid] = true } for rooms that forbid recall
 
 local function graph_key(path)
     local ok, lfs_mod = pcall(require, "lfs")
@@ -244,7 +248,10 @@ local function exit_graph(shared_db)
     local lvl, portal_lvl = player_exit_limits()
     local key = graph_key(mapper_db_file) ..
                 "|lvl=" .. tostring(lvl) .. "|plvl=" .. tostring(portal_lvl)
-    if _graph and _graph_key == key then return _graph, _graph_seed end
+    if _graph and _graph_key == key then
+        return _graph, _graph_seed, _graph_pseed, _graph_rseed,
+               _graph_noportal, _graph_norecall
+    end
 
     local mapdb, own_db = shared_db, false
     if not mapdb then
@@ -261,16 +268,29 @@ local function exit_graph(shared_db)
     end
 
     local adj, seed = {}, {}
+    local pseed, rseed = {}, {}
+    -- Which rooms forbid portalling or recalling. Sparse on purpose: the flags
+    -- are the exception, so only the flagged rooms are held and anything
+    -- absent permits both. The mapper sets these by hand or by noticing a
+    -- bounce-back, so this is exactly as complete as the mapper's own data --
+    -- which is the right standard, since a room it does not know about is one
+    -- it would not route around either.
+    local noportal, norecall = {}, {}
     local ok, err = pcall(function()
         for row in mapdb:nrows(query) do
             local f, t = row.fromuid, row.touid
             if f ~= nil and t ~= nil then
                 f, t = tostring(f), tostring(t)
                 if f == "*" or f == "**" then
-                    -- Portals ('*') and recalls ('**') are usable from
-                    -- anywhere, so they are seeded at depth 1 rather than
-                    -- reached through a real exit.
+                    -- Portals ('*') and recalls ('**') are not reached through
+                    -- an exit; they are seeded. Kept apart because a room can
+                    -- forbid one and allow the other.
                     seed[#seed + 1] = t
+                    if f == "*" then
+                        pseed[#pseed + 1] = t
+                    else
+                        rseed[#rseed + 1] = t
+                    end
                 else
                     local a = adj[f]
                     if not a then a = {}; adj[f] = a end
@@ -279,6 +299,26 @@ local function exit_graph(shared_db)
             end
         end
     end)
+
+    -- Its own pcall, deliberately. These columns are an optimisation on top of
+    -- the graph, not part of it: a mapper database old enough to lack them
+    -- must still produce a usable graph rather than none at all. Folded into
+    -- the query above, one missing column discarded every exit as well.
+    local flags_ok = pcall(function()
+        for row in mapdb:nrows(
+            "SELECT uid, noportal, norecall FROM rooms " ..
+            "WHERE noportal = 1 OR norecall = 1") do
+            local u = tostring(row.uid)
+            if tonumber(row.noportal) == 1 then noportal[u] = true end
+            if tonumber(row.norecall) == 1 then norecall[u] = true end
+        end
+    end)
+    if not flags_ok then
+        DebugNote("SnD: pathing: no noportal/norecall columns in the mapper " ..
+                  "database; portal routes will not account for rooms that " ..
+                  "block them")
+        noportal, norecall = {}, {}
+    end
     if own_db then mapdb:close() end
     if not ok then
         DebugNote("SnD: pathing: exit graph load failed: " .. tostring(err))
@@ -286,7 +326,9 @@ local function exit_graph(shared_db)
     end
 
     _graph, _graph_seed, _graph_key = adj, seed, key
-    return _graph, _graph_seed
+    _graph_pseed, _graph_rseed        = pseed, rseed
+    _graph_noportal, _graph_norecall  = noportal, norecall
+    return _graph, _graph_seed, pseed, rseed, noportal, norecall
 end
 
 -- BFS from start_room over the in-memory exit graph.
@@ -327,25 +369,56 @@ local function bfs_from(start_room, stop_rooms, shared_db)
     end
     if want and remaining == 0 then return dist end
 
-    local adj, seed = exit_graph(shared_db)
+    local adj, seed, pseed, rseed, noportal, norecall = exit_graph(shared_db)
     if not adj then return dist end
+    pseed    = pseed    or seed or {}
+    rseed    = rseed    or {}
+    noportal = noportal or {}
+    norecall = norecall or {}
 
-    -- Seed portal destinations at depth 1, expanded with the depth-2 wave.
     local portal_pending = {}
-    if seed then
-        for i = 1, #seed do
-            local tr = seed[i]
+    local done_portal, done_recall = false, false
+    local hit_limit = false
+
+    -- Seeding a portal destination at depth d+1 says "walk to a room at depth
+    -- d, then portal". Doing that at depth 1 unconditionally was the whole
+    -- inaccuracy: in a room that forbids portalling you cannot, and the real
+    -- answer is the walk out to somewhere you can. Measured against the
+    -- mapper, that walk was a flat 4 hops that our count simply omitted.
+    --
+    -- So the seeds now wait for the search to reach a room that permits them.
+    -- Where the starting room already does -- which is most of the map -- this
+    -- fires immediately at depth 1 and nothing changes.
+    -- Each seeded room carries the depth it sits at, because a room only
+    -- expands one wave AFTER the wave it belongs to. Appending them to the
+    -- next frontier regardless credited everything behind a portal with the
+    -- portal's own depth -- the landing room and the room past it both came
+    -- back as 5.
+    local function seed_at(list, depth)
+        for i = 1, #list do
+            local tr = list[i]
             if not dist[tr] and tonumber(tr) then
-                dist[tr] = 1
-                portal_pending[#portal_pending + 1] = tr
+                dist[tr] = depth
+                portal_pending[#portal_pending + 1] = { room = tr, at = depth }
                 visited = visited + 1
                 if want and want[tr] then
                     want[tr]  = nil
                     remaining = remaining - 1
-                    if remaining == 0 then return dist end
+                    if remaining == 0 then return true end
                 end
+                if visited >= MAX_BFS_ROOMS then hit_limit = true; return false end
             end
         end
+        return false
+    end
+
+    if not noportal[sid] then
+        done_portal = true
+        if seed_at(pseed, 1) then return dist end
+    end
+    if not norecall[sid] then
+        done_recall = true
+        if seed_at(rseed, 1) then return dist end
     end
 
     local frontier = { sid }
@@ -374,12 +447,35 @@ local function bfs_from(start_room, stop_rooms, shared_db)
             if visited >= MAX_BFS_ROOMS then break end
         end
 
+        -- next_fr holds the rooms at `depth`. Portalling from one of them
+        -- lands at depth + 1.
+        if not (done_portal and done_recall) then
+            for i = 1, #next_fr do
+                if not done_portal and not noportal[next_fr[i]] then
+                    done_portal = true
+                    if seed_at(pseed, depth + 1) then return dist end
+                end
+                if not done_recall and not norecall[next_fr[i]] then
+                    done_recall = true
+                    if seed_at(rseed, depth + 1) then return dist end
+                end
+                if done_portal and done_recall then break end
+            end
+        end
+        if hit_limit then break end
+
         frontier = next_fr
         if #portal_pending > 0 then
+            local still = {}
             for k = 1, #portal_pending do
-                frontier[#frontier + 1] = portal_pending[k]
+                local e = portal_pending[k]
+                if depth >= e.at then
+                    frontier[#frontier + 1] = e.room
+                else
+                    still[#still + 1] = e
+                end
             end
-            portal_pending = {}
+            portal_pending = still
         end
     end
 
@@ -571,12 +667,16 @@ end
 --
 -- Diagnostic only. bfs_from() records distances, not routes, because routing is
 -- the mapper's job -- so this walks the same graph again keeping parents. It
--- marks the step where a portal was assumed, which is the disagreement worth
--- seeing: every portal destination is seeded at depth 1 regardless of whether
--- a portal can be used from where the player stands.
+-- marks the step where a portal was used, and from where -- in a room that
+-- forbids portalling the route has to walk out first, and seeing which room it
+-- leaves from is what makes the count checkable against the mapper's.
 function snd_bfs_path(src, dst)
-    local adj, seed = exit_graph()
+    local adj, seed, pseed, rseed, noportal, norecall = exit_graph()
     if not adj then return nil end
+    pseed    = pseed    or seed or {}
+    rseed    = rseed    or {}
+    noportal = noportal or {}
+    norecall = norecall or {}
 
     local sid, did = tostring(src), tostring(dst)
     if sid == did then return {} end
@@ -584,16 +684,29 @@ function snd_bfs_path(src, dst)
     local parent, how = { [sid] = false }, {}
     local frontier    = { sid }
 
-    -- Same seeding as bfs_from: portal and recall destinations are reachable
-    -- from anywhere at cost 1.
+    -- Same rule as bfs_from: a portal is available from a room that permits
+    -- one, so the seeds wait until the search reaches such a room.
     local pending = {}
-    for i = 1, #(seed or {}) do
-        local tr = seed[i]
-        if parent[tr] == nil and tonumber(tr) then
-            parent[tr] = sid
-            how[tr]    = "portal/recall (assumed usable here)"
-            pending[#pending + 1] = tr
+    local done_portal, done_recall = false, false
+
+    local function seed_from(list, from, label)
+        for i = 1, #list do
+            local tr = list[i]
+            if parent[tr] == nil and tonumber(tr) then
+                parent[tr] = from
+                how[tr]    = label
+                pending[#pending + 1] = tr
+            end
         end
+    end
+
+    if not noportal[sid] then
+        done_portal = true
+        seed_from(pseed, sid, "portal (from here)")
+    end
+    if not norecall[sid] then
+        done_recall = true
+        seed_from(rseed, sid, "recall (from here)")
     end
 
     local function walk_back(node)
@@ -620,10 +733,25 @@ function snd_bfs_path(src, dst)
                 end
             end
         end
-        -- Portal destinations join the search with the depth-2 wave, matching
-        -- bfs_from, so rooms behind a portal are not credited one hop short.
-        if depth == 1 then
+        -- The first room reached that permits portalling is where the route
+        -- leaves from, so that is the parent recorded for every destination.
+        if not (done_portal and done_recall) then
+            for _, room in ipairs(nxt) do
+                if not done_portal and not noportal[room] then
+                    done_portal = true
+                    seed_from(pseed, room, "portal (walked out to " .. room .. ")")
+                end
+                if not done_recall and not norecall[room] then
+                    done_recall = true
+                    seed_from(rseed, room, "recall (walked out to " .. room .. ")")
+                end
+                if done_portal and done_recall then break end
+            end
+        end
+        if #pending > 0 then
             for _, tr in ipairs(pending) do nxt[#nxt + 1] = tr end
+            pending = {}
+            if parent[did] ~= nil then return walk_back(did) end
         end
         frontier = nxt
     end

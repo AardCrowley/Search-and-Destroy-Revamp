@@ -5,6 +5,21 @@
 
 ## Bug Fixes
 
+- **Routing now knows which rooms block portals.**
+  Every portal destination was treated as one hop from anywhere, which is
+  wrong in the rooms that forbid portalling — there the real cost is the walk
+  out to somewhere you can use one.  Measured against the mapper from a
+  noportal room, the counts were short by a flat 4 hops on eleven of twelve
+  targets, which is exactly that walk.  The noportal and norecall flags come
+  from the mapper's own database, the same one the routing already reads, so
+  this is as accurate as the mapper's data and needs nothing new installed.
+  Hop counts now change as you move out of such a room, where before they
+  were the same wherever you stood.
+
+  Ordering was already right — a near-constant offset cannot reorder targets,
+  and the visiting order matched the mapper's exactly — so this corrects the
+  numbers in the Hops column rather than where you get sent.
+
 - **Fixed: the route comparison banned portals on every call.**
   `xtest pathcompare` reported the mapper walking 44 rooms to a destination
   its own `mapper where` reaches in 2, and blamed our routing for the
