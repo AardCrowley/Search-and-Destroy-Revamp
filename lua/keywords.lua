@@ -320,6 +320,18 @@ function set_mob_keyword()
     save_mob_keyword(area, mob_name, keyword, true)
 end
 
+-- Alias handler: 'xset kw <keyword>'.
+--
+-- The alias used to call set_current_mob_keyword directly, and MUSHclient
+-- calls a script function as (name, line, wildcards) -- so `keyword` received
+-- the alias's own internal name and the mob was helpfully assigned a keyword
+-- of "*alias2533801". A handler that takes the keyword as its only argument
+-- cannot be wired to an alias; it needs one in front of it.
+function xset_kw(name, line, wildcards)
+    local w = (type(wildcards) == "table" and wildcards) or {}
+    set_current_mob_keyword(Trim(tostring(w.keyword or w[1] or "")))
+end
+
 function set_current_mob_keyword(keyword)
     keyword = Trim(keyword or "")
     if keyword == "" then

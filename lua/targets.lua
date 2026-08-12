@@ -291,6 +291,61 @@ local function attach_difficulty(list)
     end
 end
 
+-- A mob with a pinned room goes to that room, not to the best-guess one.
+--
+-- priority_room has been written by 'xset mob priority' (and now by 'xset mob
+-- express') since it was added, and read by nothing at all -- the routing kept
+-- using the highest-kill room, so pinning a room changed nothing. Overriding
+-- the roomid here rather than at navigation time means the window, the hop
+-- counts and 'xcp' all agree about where the target is.
+local function attach_priority_rooms(list)
+    if not list or #list == 0 then return end
+
+    local arids, seen = {}, {}
+    for _, entry in ipairs(list) do
+        local arid = entry.arid
+        if arid and arid ~= "-1" and not seen[arid] then
+            seen[arid] = true
+            arids[#arids + 1] = fixsql(arid)
+        end
+    end
+    if #arids == 0 then return end
+
+    local pinned = {}   -- arid -> { [mob_lc] = roomid }
+    -- Guarded on its own: a database predating the column must still build a
+    -- list, just without the pins.
+    pcall(function()
+        local db = db_open()
+        for row in db:nrows(
+            "SELECT zone, mob, priority_room FROM mob_tags " ..
+            "WHERE priority_room IS NOT NULL AND priority_room > 0" ..
+            " AND zone IN (" .. table.concat(arids, ",") .. ")"
+        ) do
+            local z, m, r = row.zone, row.mob, tonumber(row.priority_room)
+            if z and m and r then
+                z = tostring(z)
+                pinned[z] = pinned[z] or {}
+                pinned[z][tostring(m):lower()] = r
+            end
+        end
+        db_close(db)
+    end)
+
+    for _, entry in ipairs(list) do
+        if entry.arid and entry.mob then
+            local by_zone = pinned[entry.arid]
+            local rid     = by_zone and by_zone[tostring(entry.mob):lower()]
+            if rid then
+                entry.roomid       = rid
+                entry.pinned_room  = true
+                -- An area target with a room to walk to is a room target as
+                -- far as everything downstream is concerned.
+                if entry.link_type == "area" then entry.link_type = "room" end
+            end
+        end
+    end
+end
+
 -- Entry point: build and store main_target_list, then refresh the window.
 -- cp_or_gq: "cp" | "gq"
 -- area_or_room: "area" | "room"
@@ -331,6 +386,10 @@ function build_main_target_list(cp_or_gq, area_or_room)
 
     -- A list was built, so whatever the recovery was for is over.
     _type_recovery_tried = false
+
+    -- Before the link notes and the routing: a pinned room changes which room
+    -- the rest of this is about.
+    attach_priority_rooms(main_target_list)
 
     -- Attach room link notes to any target whose roomid has a configured link.
     attach_room_link_notes(main_target_list)

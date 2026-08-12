@@ -210,3 +210,16 @@ QUERY: mob_set_difficulty
 [14:13:37] [ERROR] SnD: xset cols: ' wibble ' is not a column, on, off, or a  width. Columns:  hops, diff, kw, type .
 [14:13:37] [ERROR] SnD: xset cols: ' wibble ' is not a column, on, off, or a  width. Columns:  hops, diff, kw, type .
 ===== end of trace =====
+
+===== SnD trace (error) - 2026-08-12 14:51:05 - v0 - 1 of 1 note(s) =====
+[14:51:05] [ERROR] SnD: xset cols: the  Hops  column has no adjustable width.
+===== end of trace =====
+
+===== SnD trace (error) - 2026-08-12 14:51:05 - v0 - 1 of 1 note(s) =====
+[14:51:05] [ERROR] SnD: xset cols: ' wibble ' is not a column, on, off, or a  width. Columns:  hops, diff, kw, type .
+===== end of trace =====
+
+===== SnD trace (error) - 2026-08-12 14:51:05 - v0 - 2 of 2 note(s) =====
+[14:51:05] [ERROR] SnD: xset cols: ' wibble ' is not a column, on, off, or a  width. Columns:  hops, diff, kw, type .
+[14:51:05] [ERROR] SnD: xset cols: ' wibble ' is not a column, on, off, or a  width. Columns:  hops, diff, kw, type .
+===== end of trace =====

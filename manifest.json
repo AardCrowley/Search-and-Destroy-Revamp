@@ -38,13 +38,13 @@
     },
     {
       "file": "keywords.lua",
-      "hash": "ecb52990",
-      "size": 14264
+      "hash": "fb9cb788",
+      "size": 14853
     },
     {
       "file": "targets.lua",
-      "hash": "52375562",
-      "size": 70043
+      "hash": "0d2ad35a",
+      "size": 72349
     },
     {
       "file": "pathing.lua",
@@ -63,13 +63,13 @@
     },
     {
       "file": "hunting.lua",
-      "hash": "e6d72120",
-      "size": 13037
+      "hash": "88994126",
+      "size": 14784
     },
     {
       "file": "scanning.lua",
-      "hash": "4c35b400",
-      "size": 16070
+      "hash": "c552790a",
+      "size": 16420
     },
     {
       "file": "history.lua",
@@ -78,8 +78,8 @@
     },
     {
       "file": "window.lua",
-      "hash": "aa46d8d0",
-      "size": 71366
+      "hash": "e41ad8f0",
+      "size": 71922
     },
     {
       "file": "settings_popup.lua",

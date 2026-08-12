@@ -747,12 +747,24 @@ local function draw_target_row(entry, index, row_x, row_y, row_h, row_right)
     local qty           = tonumber(entry.qty) or 1
     local char_w        = math.max(1, WindowTextWidth(win, FONT_ID, "W"))
 
+    -- Computed here rather than beside the destination column, which is where
+    -- it used to be: the mob column is drawn first, so an asterisk decided
+    -- later could never appear. The text list marks express targets this way
+    -- and the window did not, which is the half that gets looked at.
+    local express = type(is_express_target) == "function"
+                    and is_express_target(entry)
+
     local cx = c.mob
     if entry.unlikely then
         cx = cx + WindowText(win, FONT_ID, "(U) ", cx, ty, 0, 0, 0x506070, false)
     end
     if is_dead and not player_killed then
         cx = cx + WindowText(win, FONT_ID, "[D] ", cx, ty, 0, 0, 0xCC8800, false)
+    end
+    if express then
+        -- Same asterisk as the printed list, and the same gold as the "Mob "
+        -- destination type it corresponds to.
+        cx = cx + WindowText(win, FONT_ID, "*", cx, ty, 0, 0, 0xFFD700, false)
     end
 
     local qty_sfx    = (qty > 1) and (" x" .. qty) or ""
@@ -794,7 +806,6 @@ local function draw_target_row(entry, index, row_x, row_y, row_h, row_right)
     end
 
     -- ── Dest column ───────────────────────────────────────────────────────────
-    local express = type(is_express_target) == "function" and is_express_target(entry)
     local dest_str, dest_clr
     if entry.link_type == "area" then
         dest_str = tostring(entry.arid or "?")

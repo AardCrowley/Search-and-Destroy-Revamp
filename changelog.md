@@ -31,6 +31,46 @@
   blocks them ours is short by the walk out, which is 4 hops in the case
   tested, not 44.
 
+- **Fixed: `xset kw <keyword>` stored the wrong thing entirely.**
+  It set the keyword to something like `*alias2533801`.  The alias called a
+  function that takes the keyword as its only argument, but MUSHclient calls
+  a script as `(name, line, wildcards)` — so the keyword parameter received
+  the alias's own internal name.  The build now fails if any alias handler
+  does not take those three arguments.
+
+- **Fixed: scans kept flagging mobs you had already killed.**
+  The scan filter matched your campaign list without checking whether an
+  entry was still alive, so a completed target went on being tagged and
+  sounded on every scan — the scan appeared stuck on the mob you had just
+  finished with rather than the one you moved on to.
+
+- **Fixed: `qw` kept asking after it had found the mob.**
+  `where <mob>` answers with one line per room, and only the first was
+  compared against the target — the rest arrived after the search had already
+  finished and been cleared, so each was read as "not the mob", and each sent
+  another `where N.mob`.  Hence the trailing run of "There is no N.<mob>
+  around here."  Disabling the triggers was not enough on its own: MUSHclient
+  had already taken those lines off the socket.  Anything sent past the first
+  query is also cancelled with `stop`, so the queued ones do not come back
+  later.  The hunt trick had the same shape and got the same treatment.
+
+- **Express targets are marked in the miniwindow.**
+  They already carried an asterisk in the printed list; the window worked out
+  whether a target was express *after* it had drawn the mob column, so the
+  mark could never appear on the half people actually watch.
+
+- **`xset mob express` records the room, not just the area.**
+  Express means "go to the room rather than the area entrance", so it has to
+  know which room — but it only stored the zone the mob was already scoped
+  by, and a room ID passed to it was used to look the zone up and then thrown
+  away.  It now pins the room you are standing in, or the one you name, and
+  clears it again when you turn express off.
+
+  That pin was also never read by anything: `xset mob priority` has been
+  storing a room since it was added, and routing carried on using the
+  highest-kill guess regardless.  A pinned room is now what the window, the
+  hop counts and `xcp` all use.
+
 - **Fixed: `xset express` did nothing at all.**
   The alias captures the state and the kill threshold under one pair of
   names, and the handler read a different one — so `on`, `off` and the

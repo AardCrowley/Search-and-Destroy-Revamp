@@ -24,7 +24,27 @@ running_smart_scan = false
 function qw_reset(exact)
     EnableTrigger("trg_quick_where_match",    false)
     EnableTrigger("trg_quick_where_no_match", false)
-    qw = {index=1, exact=exact or false}
+    -- active=false is what actually stops the sequence. Disabling the triggers
+    -- does not retract the lines MUSHclient has already taken off the socket:
+    -- 'where <mob>' answers with one line per room, and every line after the
+    -- one that matched still reaches this handler. By then qw.match has been
+    -- cleared, so each of those lines compares against an empty name, reads as
+    -- "not found", and sends the next 'where N.mob' -- which is why the
+    -- command kept going after it had plainly found the mob, and why the tail
+    -- of it was a run of "There is no N.<mob> around here."
+    -- Anything past the first query may still be sitting in the MUD's command
+    -- queue, and those answers arrive whether or not we still want them --
+    -- that run of "There is no N.<mob> around here." at the end. 'stop' drops
+    -- the queue, so the sequence ends where it was decided rather than where
+    -- the server happens to catch up.
+    --
+    -- Only when we actually escalated: a mob found on the first 'where' has
+    -- nothing queued behind it, and an unprompted 'stop' would cancel whatever
+    -- the player had lined up themselves.
+    if qw.active and (tonumber(qw.index) or 1) > 1 then
+        SendNoEcho("stop")
+    end
+    qw = {index=1, exact=exact or false, active=false}
 end
 
 -- 'qw' with no argument: re-run quick-where on the current target.
@@ -78,6 +98,7 @@ end
 function do_quick_where(ix, s)
     EnableTrigger("trg_quick_where_match",    true)
     EnableTrigger("trg_quick_where_no_match", true)
+    qw.active = true
     if ix == 1 then
         Send(string.format("where %s", s))
     else
@@ -87,6 +108,8 @@ end
 
 -- Trigger handler: a 'where' line matched.
 function qw_match(name, line, wildcards)
+    -- A line from a sequence that has already finished. See qw_reset.
+    if not qw.active then return end
     if not has_target() then return end
 
     local mob_lower = Trim(wildcards.mobname):lower()
@@ -160,12 +183,14 @@ end
 -- of output gets misread as a failed match, incrementing qw.index and
 -- resending 'where N.mob' forever.
 function qw_area_too_complex()
+    if not qw.active then return end
     qw_reset(qw.exact)
     InfoNote("SnD: Quick-where stopped -- too many doors and fences to see who is in this area.")
 end
 
 -- Trigger handler: 'where' returned no match.
 function qw_no_match()
+    if not qw.active then return end
     qw_reset(qw.exact)
     if has_activity_target() then
         -- Show DB-backed room suggestions.
@@ -191,7 +216,12 @@ end
 
 function ht_reset()
     EnableTriggerGroup("HuntTrick", false)
-    ht = {index=1, first_target=true}
+    -- Same reasoning as qw_reset: the hunt trick walks an index too, and its
+    -- outstanding 'hunt N.mob' commands answer just as late.
+    if ht and ht.active and (tonumber(ht.index) or 1) > 1 then
+        SendNoEcho("stop")
+    end
+    ht = {index=1, first_target=true, active=false}
 end
 
 -- 'ht' with no argument.
@@ -228,6 +258,7 @@ function do_hunt_trick(ix, s)
 
     EnableTriggerGroup("AutoHunt", false)
     EnableTriggerGroup("HuntTrick", true)
+    ht.active = true
     if ix == 1 then
         Send(string.format("hunt %s", s))
     else

@@ -214,7 +214,12 @@ function mob_activity_tags(mob_name, in_current_room)
     -- Check main target list (CP/GQ).
     local on_list = false
     for _, target in ipairs(main_target_list) do
-        if (cur_zone == target.arid or target.link_type == "unknown")
+        -- Skip the ones already killed. Without this a completed target keeps
+        -- being tagged and sounded on every scan, so the scan goes on pointing
+        -- at the mob you have just finished with rather than the one you moved
+        -- on to -- which reads as the scan being stuck on the old target.
+        if target.is_dead ~= "yes"
+        and (cur_zone == target.arid or target.link_type == "unknown")
         and target.mob:lower() == lower_name then
             on_list = true
             break

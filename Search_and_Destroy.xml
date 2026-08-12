@@ -3535,6 +3535,9 @@ function xset_mob_express(name, line, wildcards)
     local w    = (type(wildcards) == "table" and wildcards) or {}
     local args = Trim(w["args"] or "")
     local mob, zone
+    -- The room to express to. Every branch below settles on one; it used to be
+    -- parsed only to look the zone up and then dropped.
+    local roomid = tonumber(current_room.rmid)
 
     if args == "" then
         if not current_target or not current_target.name then
@@ -3552,7 +3555,7 @@ function xset_mob_express(name, line, wildcards)
             if room_part:lower() == "here" then
                 zone = current_room.arid or ""
             else
-                local roomid = tonumber(room_part)
+                roomid = tonumber(room_part)
                 if not roomid then
                     InfoNote("SnD: Invalid room ID '", room_part, "'. Use a number or 'here'.")
                     return
@@ -3594,10 +3597,34 @@ function xset_mob_express(name, line, wildcards)
     end
 
     local on = mob_toggle_tag(mob, zone, "express")
-    InfoNote("Mob '", mob, "' express flag: ", on and "ON" or "OFF",
-             " (zone: ", zone, ")")
+
+    -- Express means "go to the room, not the area entrance", so it has to
+    -- record WHICH room. It only stored the zone, which is what the mob was
+    -- already scoped by, leaving the destination to be guessed from kill
+    -- counts -- exactly what express exists to override.
     if on then
+        if not roomid or roomid <= 0 then
+            InfoNote("SnD: Not in a known room, so there is no room to express to.")
+            InfoNote("  Stand where you find it, or: xset mob express <mob> <roomid>")
+            mob_toggle_tag(mob, zone, "express")   -- undo; nothing to point at
+            return
+        end
+        mob_set_priority_room(mob, zone, roomid)
+        InfoNote("Mob '", mob, "' express flag: ON -- going straight to room ",
+                 tostring(roomid), " (zone: ", zone, ").")
         InfoNote("This mob will always use express navigation regardless of kill count.")
+    else
+        -- The room was only ever there to serve express; leaving it behind
+        -- would keep steering routes at it after the flag was turned off.
+        mob_set_priority_room(mob, zone, nil)
+        InfoNote("Mob '", mob, "' express flag: OFF (zone: ", zone,
+                 "). Its pinned room is cleared too.")
+    end
+
+    if type(build_main_target_list) == "function"
+    and type(current_activity) == "string"
+    and (current_activity == "cp" or current_activity == "gq") then
+        build_main_target_list(current_activity, area_room_type)
     end
 end
 
@@ -4634,7 +4661,7 @@ local _snd_subroutines = {
     "room_note_area", "room_note_room", "roomchars", "roomchars_end",
     "roomchars_start", "scan_door_nearby", "scan_empty", "scan_end",
     "scan_location_current_room", "scan_location_nearby_room", "scan_mob", "scan_start",
-    "set_current_mob_keyword", "set_mob_keyword", "set_speed", "simulate_cp",
+    "set_mob_keyword", "set_speed", "simulate_cp",
     "simulate_quest", "sndReload", "snd_debug_cmd", "snd_show_version",
     "sp_toggle", "spoof_level", "toggle_automatic_update_checking", "trigger_campaign_rewards_bonus_qp",
     "trigger_campaign_rewards_gold", "trigger_campaign_rewards_practices", "trigger_campaign_rewards_qp", "trigger_campaign_rewards_tps",
@@ -4647,7 +4674,7 @@ local _snd_subroutines = {
     "xset_area_edit_noquest", "xset_area_edit_start", "xset_area_edit_vidblain", "xset_area_list",
     "xset_area_list_unset", "xset_autonav", "xset_autoreload", "xset_cols",
     "xset_con_overwrite",
-    "xset_debug", "xset_express", "xset_gqalias", "xset_import_area_vars",
+    "xset_debug", "xset_express", "xset_gqalias", "xset_import_area_vars", "xset_kw",
     "xset_index_areas", "xset_level_area", "xset_level_area_reset", "xset_level_buffer",
     "xset_mark_current", "xset_mark_set", "xset_marks_delete", "xset_marks_edit",
     "xset_marks_list", "xset_marks_search", "xset_maze", "xset_maze_delete",
@@ -5017,7 +5044,7 @@ end
 
         <alias match="^xset kw$" script="set_mob_keyword" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
-        <alias match="^xset kw (?<keyword>.+)$" script="set_current_mob_keyword" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset kw (?<keyword>.+)$" script="xset_kw" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xset marks$" script="xset_marks_list" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^xset marks (?!edit |del(?:ete)? )(?<kw>.+)$" script="xset_marks_search" enabled="y" regexp="y" sequence="150" ignore_case="y" send_to="12"></alias>
