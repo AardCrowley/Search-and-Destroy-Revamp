@@ -5,6 +5,17 @@
 
 ## Bug Fixes
 
+- **Fixed: the route comparison banned portals on every call.**
+  `xtest pathcompare` reported the mapper walking 44 rooms to a destination
+  its own `mapper where` reaches in 2, and blamed our routing for the
+  difference.  The mapper's `findpath` is asked whether to avoid portals, and
+  that answer crosses between plugins as a string — but every string in Lua
+  is true, including the empty one, so "no, portals are fine" read as "yes,
+  avoid them".  Every measurement taken with it was of the wrong question.
+  Ours and the mapper agree exactly where portals are allowed; in a room that
+  blocks them ours is short by the walk out, which is 4 hops in the case
+  tested, not 44.
+
 - **Fixed: `xcp` walked you to the target twice.**
   Reported by two players, and it looked intermittent because it needs three
   things at once: `xset autonav on`, and a target that is either express or

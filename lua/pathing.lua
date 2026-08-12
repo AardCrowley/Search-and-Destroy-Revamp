@@ -472,9 +472,32 @@ function snd_mapper_route(src, dst, noportals, norecalls)
     local have_parts = (type(_snd_mapper_path_parts) == "table")
     if have_parts then _snd_mapper_path_parts = {} end
 
-    local ok, rc = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
-                         tostring(src), tostring(dst),
-                         noportals and "1" or "", norecalls and "1" or "")
+    -- Omitted, never passed as "". CallPlugin carries strings, and EVERY
+    -- string is truthy in Lua -- including the empty one. findpath tests these
+    -- with a bare `if noportals then`, so sending "" to mean false banned
+    -- portals on every single call. The comparison then showed the mapper
+    -- walking 44 rooms to somewhere 'mapper where' reaches in 2, and reported
+    -- our answer as the short one. An argument that cannot be false must be
+    -- left out instead.
+    local ok, rc
+    if noportals and norecalls then
+        ok, rc = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
+                       tostring(src), tostring(dst), "1", "1")
+    elseif noportals then
+        ok, rc = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
+                       tostring(src), tostring(dst), "1")
+    else
+        -- "portals yes, recalls no" is not expressible across CallPlugin: the
+        -- third argument would have to be a falsy string and there is not one.
+        -- Nothing asks for it; if something does it needs a different bridge,
+        -- not a value that quietly means true.
+        if norecalls then
+            DebugNote("SnD: mapper findpath: norecalls alone cannot be sent " ..
+                      "through CallPlugin; asking with both allowed")
+        end
+        ok, rc = pcall(CallPlugin, PLUGIN_ID_MAPPER, "findpath",
+                       tostring(src), tostring(dst))
+    end
     if not ok then
         DebugNote("SnD: mapper findpath: CallPlugin raised: " .. tostring(rc))
         return nil
