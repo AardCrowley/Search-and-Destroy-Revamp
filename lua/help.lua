@@ -82,11 +82,13 @@ local TOPICS = {
         syntax   = {
             "xset cols",
             "xset cols <hops|diff|kw|type> [on|off]",
+            "xset cols <on|off> [column]",
+            "xset cols <characters>",
         },
         summary  = "Choose which columns the target list shows.",
         sections = {
             {
-                text = "Bare 'xset cols' lists every column, whether it is on, and what it is for. Naming a column with no on/off flips it. The number, mob and destination columns cannot be hidden: without them a row cannot be read or clicked.",
+                text = "Bare 'xset cols' lists every column, whether it is on, and what it is for. Naming a column with no on/off flips it. The two arguments go in either order, so 'xset cols off hops' and 'xset cols hops off' both work.\n\n'xset cols off' hides every optional column at once and 'xset cols on' brings them all back. A bare number is a keyword width -- 'xset cols 20' -- and shows the column if it was hidden, since setting a width and being shown nothing answers nothing.\n\nThe number, mob and destination columns cannot be hidden: without them a row cannot be read or clicked.",
             },
             {
                 heading = "hops",
@@ -98,7 +100,7 @@ local TOPICS = {
             },
             {
                 heading = "kw",
-                text    = "Off by default. Shows the keyword that would actually be sent for each target -- what 'scan', 'hunt' and the quick-kill commands will use. Turn it on when a target is not being found: a wrong keyword is visible here rather than having to be guessed from a command that quietly does nothing. Correct it with 'xset kw'.",
+                text    = "Off by default. Shows the keyword that would actually be sent for each target -- what 'scan', 'hunt' and the quick-kill commands will use. Turn it on when a target is not being found: a wrong keyword is visible here rather than having to be guessed from a command that quietly does nothing. Correct it with 'xset kw'. It is fifteen characters wide by default; 'xset cols 20' changes that, between 4 and 40. The width is in characters rather than a share of the window, because a keyword is short and does not need more room just because the window has it.",
             },
             {
                 heading = "type",

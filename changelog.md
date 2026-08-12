@@ -71,12 +71,16 @@
 
 - **You can choose which columns the target list shows.**
   `xset cols` lists them; `xset cols <column>` flips one, or say `on`/`off`
-  outright.  They are also in `snd settings`.  Hops, Diff and Type can all be
+  outright, in either word order.  `xset cols off` hides every optional column
+  at once and `xset cols on` restores them.  They are also in `snd settings`.  Hops, Diff and Type can all be
   turned off — the hop count in particular is dead space if you leave route
   optimization off, since nothing populates it.  The number, mob and
   destination columns stay: without them a row cannot be read or clicked.
-  Hiding a column gives its width to the ones that remain rather than leaving
-  a gap.
+  The window itself widens and narrows to match: turning a column on adds room
+  for it rather than taking that room out of the mob name, and turning it off
+  gives the same pixels back.  Changing the keyword width does the same.  The
+  window will not grow past your screen or shrink below its minimum, and a
+  width you have dragged to is otherwise left alone.
 
 - **New column: the keyword that would actually be sent.**
   Off by default; `xset cols kw on`.  It shows what `scan`, `hunt` and the
@@ -84,7 +88,15 @@
   work can be *seen* rather than deduced from a command that quietly finds
   nothing — and corrected on the spot with `xset kw`.  A target with no
   keyword at all reads `(none)` rather than showing blank, since those two
-  cases need different fixes.
+  cases need different fixes.  It is 15 characters wide; `xset cols 20`
+  changes that.  The width is in characters rather than a share of the window
+  — a keyword is short and does not need more room just because the window
+  has it.
+
+- **`cp check` and `gq check` no longer make you run `cp info` first.**
+  The campaign type is parsed from `cp info` and does not survive a reload, so
+  a check run first had nothing to build from and said so.  It now runs the
+  info itself and carries on — the command was never in doubt.
 
 - **Updates now apply themselves, when nothing is in progress.**
   Fetching new modules did nothing until the plugin reloaded, and it left that

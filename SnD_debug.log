@@ -184,3 +184,16 @@ QUERY: mob_set_difficulty
 [19:04:08] [ERROR] SnD: mob difficulty must be 1-5, or 0 to clear it.
 [19:04:08] [ERROR] SnD: mob difficulty must be a number 0-5 (0 clears it).
 ===== end of trace =====
+
+===== SnD trace (error) - 2026-08-12 13:42:15 - v0 - 1 of 1 note(s) =====
+[13:42:15] [ERROR] SnD: xset cols: the  Hops  column has no adjustable width.
+===== end of trace =====
+
+===== SnD trace (error) - 2026-08-12 13:42:15 - v0 - 1 of 1 note(s) =====
+[13:42:15] [ERROR] SnD: xset cols: ' wibble ' is not a column, on, off, or a  width. Columns:  hops, diff, kw, type .
+===== end of trace =====
+
+===== SnD trace (error) - 2026-08-12 13:42:15 - v0 - 2 of 2 note(s) =====
+[13:42:15] [ERROR] SnD: xset cols: ' wibble ' is not a column, on, off, or a  width. Columns:  hops, diff, kw, type .
+[13:42:15] [ERROR] SnD: xset cols: ' wibble ' is not a column, on, off, or a  width. Columns:  hops, diff, kw, type .
+===== end of trace =====

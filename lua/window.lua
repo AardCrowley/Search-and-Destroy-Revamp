@@ -54,6 +54,9 @@ local DIFF_COLS = {
 
 local windowinfo        = nil
 local _width            = DEFAULT_W
+-- Pixels claimed by the optional columns at the last draw, so a change in the
+-- column set can be turned into a change in window width.
+local _col_fixed_w      = nil
 local _height           = DEFAULT_H
 local _min_expand_h     = DEFAULT_H   -- floor for expand-mode shrink; updated on manual resize
 local _screen_w         = 0
@@ -552,7 +555,13 @@ LIST_COLUMNS = {
     { key = "diff", setting = "col_show_diff", label = "Diff", default = "on",
       desc = "difficulty of reaching the mob, 1-5" },
     { key = "kw",   setting = "col_show_kw",   label = "Kw",   default = "off",
-      desc = "the keyword that would be sent for this target" },
+      desc = "the keyword that would be sent for this target",
+      -- Sized in characters rather than as a share of the row: a keyword is
+      -- short and its useful width does not scale with the window. Most fit
+      -- in fifteen; the ones that do not are worth widening for rather than
+      -- taking space from the mob name on every other row.
+      width_setting = "col_kw_width", width_default = 15,
+      width_min = 4, width_max = 40 },
     { key = "type", setting = "col_show_type", label = "Type", default = "on",
       desc = "whether 'go' routes to the mob's room or the area entrance" },
 }
@@ -564,10 +573,77 @@ function list_column_def(key)
     return nil
 end
 
+function list_column_width(key)
+    local def = list_column_def(key)
+    if not def or not def.width_setting then return nil end
+    local n = tonumber(snd_get_setting(def.width_setting,
+                                       tostring(def.width_default)))
+    if not n then n = def.width_default end
+    return math.max(def.width_min, math.min(def.width_max, math.floor(n)))
+end
+
 function list_column_shown(key)
     local def = list_column_def(key)
     if not def then return true end
     return snd_get_setting(def.setting, def.default) ~= "off"
+end
+
+-- The pixels the optional columns claim outright, before anything is shared
+-- out. Hops and Diff are fixed labels; the keyword column is a character count.
+-- The mob and destination columns divide whatever is left, so this is exactly
+-- the amount the window has to gain or lose for them to keep the room they had.
+-- Only ever reached from the redraw, which has already established that the
+-- window exists; checking again here would be noise, and it made the measure
+-- untestable on its own.
+local function fixed_columns_width()
+    local w = 0
+    if list_column_shown("hops") then
+        w = w + WindowTextWidth(win, FONT_ID, "9999 ")
+    end
+    if list_column_shown("diff") then
+        w = w + WindowTextWidth(win, FONT_ID, "Diff ")
+    end
+    if list_column_shown("kw") then
+        w = w + WindowTextWidth(win, FONT_ID,
+                                string.rep("W", list_column_width("kw"))) + 4
+    end
+    return w
+end
+
+-- Grow or shrink the window by whatever the column set just cost or freed.
+--
+-- Adjusting by the DIFFERENCE rather than recomputing an ideal width is the
+-- point: the window's width is the player's, set by dragging, and the mob and
+-- destination columns should keep the room they had. Turning the keyword
+-- column on widens the window by a keyword's worth instead of taking it out of
+-- the mob name; turning it off gives the same pixels back.
+--
+-- Driven from the redraw rather than the command, so it covers the settings
+-- window and anything else that changes a column without going through
+-- 'xset cols'.
+local function fit_window_to_columns()
+    local want = fixed_columns_width()
+    if _col_fixed_w == nil then
+        -- First draw: adopt the current layout without moving anything. The
+        -- saved width already accounts for whatever columns were on.
+        _col_fixed_w = want
+        return
+    end
+    local delta = want - _col_fixed_w
+    _col_fixed_w = want
+    if delta == 0 then return end
+
+    -- Never off the edge of the screen, and never below the minimum: a window
+    -- that grew past either would be worse than a cramped column.
+    local max_w = (_screen_w > 0) and math.floor(_screen_w * 0.95) or nil
+    local new_w = _width + delta
+    if max_w then new_w = math.min(new_w, max_w) end
+    new_w = math.max(MIN_W, new_w)
+    if new_w == _width then return end
+
+    _width = new_w
+    WindowResize(win, _width, _height, Theme.SECONDARY_BODY)
+    SetVariable("snd_win_width", tostring(_width))
 end
 
 -- Pixel x positions for the table layout.
@@ -582,14 +658,22 @@ local function list_col_pos(row_x, row_right)
     local hops_w = list_column_shown("hops") and WindowTextWidth(win, FONT_ID, "9999 ") or 0
     local diff_w = list_column_shown("diff") and WindowTextWidth(win, FONT_ID, "Diff ") or 0
 
-    local rest = rx - tx - idx_w - hops_w - diff_w
+    local rest    = rx - tx - idx_w - hops_w - diff_w
     local show_kw = list_column_shown("kw")
-    -- The mob name is what the row is for, so it keeps the larger share; the
-    -- keyword is short by nature and is given only what it needs.
-    local mob_frac = show_kw and 0.40 or 0.54
-    local kw_frac  = show_kw and 0.18 or 0
-    local mob_w    = math.floor(rest * mob_frac)
-    local kw_w     = math.floor(rest * kw_frac)
+
+    -- The keyword takes a fixed number of characters, not a share of the row,
+    -- and the mob name keeps its share of whatever is left. A proportional
+    -- keyword column grew with the window without ever needing to and shrank
+    -- below usefulness on a narrow one.
+    local kw_w = 0
+    if show_kw then
+        kw_w = WindowTextWidth(win, FONT_ID,
+                               string.rep("W", list_column_width("kw"))) + 4
+        -- Never at the mob name's expense past the point of legibility: the
+        -- row exists to name a mob.
+        kw_w = math.min(kw_w, math.floor(rest * 0.40))
+    end
+    local mob_w = math.floor((rest - kw_w) * 0.54)
 
     local pos = { tx = tx, rx = rx, idx = tx }
     local x = tx + idx_w
@@ -1006,6 +1090,7 @@ end
 
 function xg_draw_window()
     if not window_exists() then return end
+    fit_window_to_columns()
 
     -- Expand mode: resize the window height to fit the full CP/GQ list.
     -- Only applies to the event tabs; settings is never expanded.
@@ -1263,46 +1348,116 @@ end
 -- takes no arguments -- so every form simply flipped visibility. 'xset win on'
 -- could turn the window OFF, and the expand/collapse forms did nothing they
 -- claimed to.
--- Alias handler: 'xset cols [column] [on|off]'
+-- Alias handler: 'xset cols [column] [on|off|<width>]', in any order.
 --
--- Bare form lists what exists and what each column is for. A toggle with no
--- state flips it, which is what you want when the point is to see the effect.
+-- The two arguments are unordered on purpose. "xset cols off hops" and
+-- "xset cols hops off" are the same sentence to anyone typing quickly, and
+-- refusing one of them teaches nothing.
+--
+--   xset cols                 list every column and its state
+--   xset cols hops            flip one
+--   xset cols off hops        set one, either word order
+--   xset cols off             every optional column off
+--   xset cols on              every optional column back on
+--   xset cols 20              20 characters of keyword
+--   xset cols on 20           show the keyword column, 20 characters wide
+--
+-- A bare number means the keyword column because it is the only one with a
+-- width; if another ever gains one, a number will have to name its column.
 function xset_cols(name, line, wildcards)
-    local w     = (type(wildcards) == "table" and wildcards) or {}
-    local key   = tostring(w.col or w[1] or ""):lower()
-    local state = tostring(w.state or w[2] or ""):lower()
+    local w  = (type(wildcards) == "table" and wildcards) or {}
+    local t1 = tostring(w.col   or w[1] or ""):lower()
+    local t2 = tostring(w.state or w[2] or ""):lower()
 
-    if key == "" then
-        InfoNote("SnD: List columns -- 'xset cols <column> [on|off]' to change.")
-        for _, c in ipairs(LIST_COLUMNS) do
-            InfoNote(string.format("  %-5s %-3s  %s",
-                c.key, list_column_shown(c.key) and "on" or "off", c.desc))
+    local col, state, width
+    local function classify(tok)
+        if tok == "" then return end
+        if tok == "on" or tok == "off" then
+            state = tok
+        elseif tonumber(tok) then
+            width = tonumber(tok)
+        elseif list_column_def(tok) then
+            col = tok
+        else
+            return tok            -- unrecognised, reported by the caller
         end
-        InfoNote("  The number, mob and destination columns are always shown.")
-        return
     end
+    local bad = classify(t1) or classify(t2)
 
-    local def = list_column_def(key)
-    if not def then
+    if bad then
         local names = {}
         for _, c in ipairs(LIST_COLUMNS) do names[#names + 1] = c.key end
-        ErrorNote("SnD: xset cols: no column '", key, "'. Choose from: ",
-                  table.concat(names, ", "), ".")
+        ErrorNote("SnD: xset cols: '", bad, "' is not a column, on, off, or a ",
+                  "width. Columns: ", table.concat(names, ", "), ".")
         return
     end
 
-    local new_val
-    if state == "" then
-        new_val = list_column_shown(key) and "off" or "on"
-    elseif state == "on" or state == "off" then
-        new_val = state
-    else
-        ErrorNote("SnD: xset cols: '", state, "' is not on or off.")
+    -- Nothing at all: show what there is.
+    if not col and not state and not width then
+        InfoNote("SnD: List columns -- 'xset cols <column> [on|off]' to change.")
+        for _, c in ipairs(LIST_COLUMNS) do
+            local ws = c.width_setting
+                       and string.format("  (%d chars)", list_column_width(c.key))
+                       or ""
+            InfoNote(string.format("  %-5s %-3s  %s%s",
+                c.key, list_column_shown(c.key) and "on" or "off", c.desc, ws))
+        end
+        InfoNote("  The number, mob and destination columns are always shown.")
+        InfoNote("  'xset cols off' hides them all; 'xset cols 20' sets the ",
+                 "keyword width.")
         return
     end
 
-    snd_set_setting(def.setting, new_val, true)
-    InfoNote("SnD: ", def.label, " column is ", new_val, " (", def.desc, ").")
+    -- A width with no column named can only mean the one column that has one.
+    if width and not col then col = "kw" end
+
+    -- A bare on/off with no column is the sweeping form.
+    if not col then
+        for _, c in ipairs(LIST_COLUMNS) do
+            snd_set_setting(c.setting, state, true)
+        end
+        InfoNote("SnD: every optional column is now ", state,
+                 " (number, mob and destination always show).")
+        if type(xg_draw_window) == "function" then xg_draw_window() end
+        return
+    end
+
+    local def = list_column_def(col)
+
+    if width then
+        if not def.width_setting then
+            ErrorNote("SnD: xset cols: the ", def.label,
+                      " column has no adjustable width.")
+            return
+        end
+        local clamped = math.max(def.width_min,
+                                 math.min(def.width_max, math.floor(width)))
+        snd_set_setting(def.width_setting, tostring(clamped), true)
+        if clamped ~= math.floor(width) then
+            InfoNote("SnD: ", def.label, " width must be between ",
+                     tostring(def.width_min), " and ", tostring(def.width_max),
+                     " characters; set to ", tostring(clamped), ".")
+        else
+            InfoNote("SnD: ", def.label, " column is ", tostring(clamped),
+                     " characters wide.")
+        end
+    end
+
+    -- A width given with no on/off implies you want to see it; asking for 20
+    -- characters of a hidden column and being shown nothing is not an answer.
+    if not state and width and not list_column_shown(col) then
+        state = "on"
+    end
+
+    if state then
+        snd_set_setting(def.setting, state, true)
+        InfoNote("SnD: ", def.label, " column is ", state, " (", def.desc, ").")
+    elseif not width then
+        local flipped = list_column_shown(col) and "off" or "on"
+        snd_set_setting(def.setting, flipped, true)
+        InfoNote("SnD: ", def.label, " column is ", flipped, " (", def.desc, ").")
+    end
+
     if type(xg_draw_window) == "function" then xg_draw_window() end
 end
 
@@ -1389,6 +1544,11 @@ end
 -- ─── CREATE / INIT ───────────────────────────────────────────────────────────
 
 function xg_create_window()
+    -- Forget the column footprint: the font is chosen below, and a different
+    -- font changes every column's pixel width without any column having
+    -- changed. Re-adopting on the next draw stops a font change being read as
+    -- a column change and resizing the window for it.
+    _col_fixed_w = nil
     _screen_w = tonumber(GetInfo(281)) or 1920
     _screen_h = tonumber(GetInfo(280)) or 1080
     local dpi_h = (type(GetDeviceCaps) == "function") and GetDeviceCaps(88) or nil

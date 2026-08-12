@@ -11,6 +11,11 @@ current_activity    = "none"
 -- "area" | "room" | "none" — determined from the first cp/gq check list
 area_room_type      = "none"
 
+-- Guards the one automatic 'cp info' / 'gq info' that a check may trigger when
+-- the campaign type is unknown. Without it the two would call each other
+-- indefinitely, because info always finishes by running the check.
+_type_recovery_tried = false
+
 -- Ordered list of target entries built by build_main_target_list().
 -- Each entry is a table with keys: mob, arid, roomid, roomName, qty, is_dead,
 -- link_type, kw, results, kills, unlikely, duplicates, index, etc.
@@ -291,19 +296,37 @@ function build_main_target_list(cp_or_gq, area_or_room)
     elseif area_or_room == "room" then
         main_target_list, room_targets_ignored = build_room_targets(cp_or_gq)
     elseif area_or_room == "none" or area_or_room == nil then
-        -- Reached whenever the campaign type is not known yet, which after a
-        -- reload is every time: area_room_type is set by parsing 'cp info' /
-        -- 'gq info' output, and it does not survive one. Running the check
-        -- first then produced an internal error naming a variable the player
-        -- has no reason to have heard of.
-        local what = (cp_or_gq == "gq") and "gq info" or "cp info"
-        InfoNote("SnD: run '", what, "' first -- the target list is built from ",
-                 "its output, and that does not survive a reload.")
+        -- The campaign type is not known yet, which after a reload is every
+        -- time: it comes from parsing 'cp info' / 'gq info' output and does
+        -- not survive one.
+        --
+        -- Telling the player to go and run that themselves was busywork -- the
+        -- command is known, nothing is ambiguous, and the info handler already
+        -- chains back into the check when it finishes. So fetch it.
+        local what  = (cp_or_gq == "gq") and "gq info" or "cp info"
+        local fetch = (cp_or_gq == "gq") and do_gq_info or do_cp_info
+
+        -- Once only. If the info comes back and the type is still unknown --
+        -- which is what happens when there is no campaign at all -- asking
+        -- again would run the pair forever, since info always ends by running
+        -- the check.
+        if _type_recovery_tried or type(fetch) ~= "function" then
+            _type_recovery_tried = false
+            InfoNote("SnD: '", what, "' did not say whether this campaign is ",
+                     "by area or by room. If you are not on one, that is why.")
+            return
+        end
+        _type_recovery_tried = true
+        InfoNote("SnD: no target list yet -- running '", what, "' first.")
+        fetch()
         return
     else
         ErrorNote("SnD: build_main_target_list: unknown area_or_room value: " .. tostring(area_or_room))
         return
     end
+
+    -- A list was built, so whatever the recovery was for is over.
+    _type_recovery_tried = false
 
     -- Attach room link notes to any target whose roomid has a configured link.
     attach_room_link_notes(main_target_list)

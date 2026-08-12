@@ -43,8 +43,8 @@
     },
     {
       "file": "targets.lua",
-      "hash": "5a18380c",
-      "size": 68763
+      "hash": "2bf46208",
+      "size": 69787
     },
     {
       "file": "pathing.lua",
@@ -78,8 +78,8 @@
     },
     {
       "file": "window.lua",
-      "hash": "38dd7a52",
-      "size": 64277
+      "hash": "aa46d8d0",
+      "size": 71366
     },
     {
       "file": "settings_popup.lua",
@@ -88,8 +88,8 @@
     },
     {
       "file": "help.lua",
-      "hash": "1f5e83f8",
-      "size": 86191
+      "hash": "7d86b4fa",
+      "size": 86863
     },
     {
       "file": "changelog.lua",
