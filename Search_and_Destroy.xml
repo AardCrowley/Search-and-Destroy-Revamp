@@ -1914,12 +1914,32 @@ function xtest_pathcompare(name, line, wildcards)
             labels[#labels + 1] = "room " .. id
         end
     else
+        -- Most campaign entries are area targets with no room of their own:
+        -- routing aims at the area's anchor room for those, so that is what
+        -- has to be compared. Taking only entries with a roomid left twelve of
+        -- fourteen targets out of the comparison.
+        local skipped = 0
         for i, t in ipairs(main_target_list or {}) do
-            local rid = tonumber(t.roomid)
-            if rid and rid > 0 and t.is_dead ~= "yes" then
-                dests[#dests + 1]  = rid
-                labels[#labels + 1] = tostring(t.mob or ("target " .. i))
+            if t.is_dead ~= "yes" then
+                local rid  = tonumber(t.roomid)
+                local kind = "room"
+                if not rid or rid <= 0 then
+                    rid  = (type(snd_area_anchor) == "function")
+                           and snd_area_anchor(t.arid) or nil
+                    kind = "area anchor"
+                end
+                if rid and rid > 0 then
+                    dests[#dests + 1]  = rid
+                    labels[#labels + 1] = string.format("%s [%s]",
+                        tostring(t.mob or ("target " .. i)), kind)
+                else
+                    skipped = skipped + 1
+                end
             end
+        end
+        if skipped > 0 then
+            InfoNote("SnD: ", tostring(skipped), " target(s) have neither a room",
+                     " nor an area anchor and cannot be compared.")
         end
     end
 
@@ -1931,7 +1951,7 @@ function xtest_pathcompare(name, line, wildcards)
 
     InfoNote("SnD: comparing ", tostring(#dests), " destination(s) from room ",
              tostring(src))
-    InfoNote("SnD: ", string.format("%-24s %7s %7s %7s  %s",
+    InfoNote("SnD: ", string.format("%-34s %7s %7s %7s  %s",
              "target", "mapper", "ours", "diff", "note"))
 
     local agree, differ, unreachable = 0, 0, 0
@@ -1964,8 +1984,8 @@ function xtest_pathcompare(name, line, wildcards)
             note = (not mh) and "mapper found none" or "ours found none"
         end
 
-        InfoNote("SnD: ", string.format("%-24s %7s %7s %7s  %s",
-                 tostring(labels[i]):sub(1, 24),
+        InfoNote("SnD: ", string.format("%-34s %7s %7s %7s  %s",
+                 tostring(labels[i]):sub(1, 34),
                  tostring(mh or "-"), tostring(bh or "-"), diff, note))
     end
 

@@ -626,6 +626,25 @@ local function area_anchor_room(arid, snddb, mapdb)
     return nil
 end
 
+-- The room routing would actually aim at for an area target, for tests and
+-- comparisons.
+--
+-- An area target has no roomid of its own -- resolve_target() falls back to the
+-- area's anchor room -- so comparing only entries that carry a roomid leaves
+-- out most of a campaign.
+function snd_area_anchor(arid)
+    if type(arid) ~= "string" or arid == "" or arid == "-1" then return nil end
+    local snddb = (type(db_open) == "function") and db_open() or nil
+    local mapdb = (mapper_db_file and mapper_db_file ~= "")
+                  and sqlite3.open(mapper_db_file) or nil
+    local ok, room = pcall(area_anchor_room, arid, snddb, mapdb)
+    if snddb and type(db_close) == "function" then db_close(snddb) end
+    if mapdb then pcall(function() mapdb:close() end) end
+    if not ok then return nil end
+    return tonumber(room)
+end
+
+
 -- ─── INTERNAL: ROOM LINKS ────────────────────────────────────────────────────
 
 -- Returns the "near" (mapper-reachable) side of a configured room link for
