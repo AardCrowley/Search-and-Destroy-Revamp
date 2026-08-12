@@ -5,6 +5,36 @@
 
 ## Bug Fixes
 
+- **Fixed: `xcp` walked you to the target twice.**
+  Reported by two players, and it looked intermittent because it needs three
+  things at once: `xset autonav on`, and a target that is either express or
+  resolves to a single room.  `xcp` navigates itself, then runs a room search
+  to fill the `nx` list — and that search has its own autonav branch, which
+  walks you there when it finds exactly one room.  So the display-only search
+  sent you to the room you were already being sent to.  A search run purely
+  for display no longer navigates.
+
+- **Fixed: mob tags were ignored for the mob you were actually targeting.**
+  `nowhere`, `nohunt` and `noscan` were checked against `current_target.mob`
+  and `current_target.arid` — two fields nothing has ever set.  The campaign
+  list holds rows shaped `mob`/`arid`, but the current target renames them to
+  `name`/`area`, and seven checks had been copied across without renaming.
+  Nothing threw, because the lookup simply returned "no tag", so every one of
+  those tags silently did nothing in the one case they exist for.
+
+- **Fixed: `xset kw <keyword>` never saw your current target.**
+  Same cause: it gated on `current_target.mob`, so it answered "'kw' has no
+  current target" no matter what you had targeted.
+
+  Reported by **Crowley**, after `xcp` onto a barbarian trebuchet.
+
+- **Express targets are marked again.**
+  They carry a leading `*` in the target list, as they did in 5.99, with a
+  legend under the list.  The destination column already read `Mob ` rather
+  than `Area` for them, but nothing said that meant "express".  `xcp` also
+  says out loud when it takes an express route, since walking straight to one
+  room instead of the area entrance otherwise reads as a routing fault.
+
 - **Fixed: `cp check` after a reload reported an internal error.**
   It answered "build_main_target_list: unknown area_or_room value: none",
   naming a variable no player has reason to have heard of.  The campaign type
@@ -12,6 +42,23 @@
   had nothing to work from.  It now says to run `cp info`, and why.
 
 ## New
+
+- **You can choose which columns the target list shows.**
+  `xset cols` lists them; `xset cols <column>` flips one, or say `on`/`off`
+  outright.  They are also in `snd settings`.  Hops, Diff and Type can all be
+  turned off — the hop count in particular is dead space if you leave route
+  optimization off, since nothing populates it.  The number, mob and
+  destination columns stay: without them a row cannot be read or clicked.
+  Hiding a column gives its width to the ones that remain rather than leaving
+  a gap.
+
+- **New column: the keyword that would actually be sent.**
+  Off by default; `xset cols kw on`.  It shows what `scan`, `hunt` and the
+  quick-kill commands will use for each target, so a keyword that does not
+  work can be *seen* rather than deduced from a command that quietly finds
+  nothing — and corrected on the spot with `xset kw`.  A target with no
+  keyword at all reads `(none)` rather than showing blank, since those two
+  cases need different fixes.
 
 - **Updates now apply themselves, when nothing is in progress.**
   Fetching new modules did nothing until the plugin reloaded, and it left that

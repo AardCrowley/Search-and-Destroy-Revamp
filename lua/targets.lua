@@ -771,6 +771,7 @@ function print_target_links(list)
     end
 
     local alt_bg = snd_get_setting("color_alternating_row", "#0C0C1A")
+    local shown_express = false
     ColourNote("#808080", "", string.rep("-", 80))
 
     for i, v in ipairs(list) do
@@ -779,10 +780,22 @@ function print_target_links(list)
             and current_target.area == v.arid
         local color       = color_for_target(v, is_current)
         local bg          = (i % 2 == 0) and alt_bg or ""
-        local mob_text    = string.format("%s%s",
-            (v.is_dead == "no") and "" or "[D] ", v.mob)
+        -- Express targets carry a leading asterisk, as they did in 5.99.
+        -- The destination column already says "Mob " for them, but that is a
+        -- distinction nobody reads as "express" -- and when xcp behaves oddly
+        -- on one, being unable to tell which targets are express is the
+        -- difference between a useful report and a guess.
+        local is_express  = (v.link_type == "room") and is_express_target(v)
+        if is_express then shown_express = true end
+        local mob_text    = string.format("%s%s%s",
+            (v.is_dead == "no") and "" or "[D] ",
+            is_express and "*" or "", v.mob)
         local arid_str    = tostring(v.arid):sub(1, 10)
         local tooltip     = "Target mob " .. i .. " - " .. mob_text
+        if is_express then
+            tooltip = tooltip .. "\n* express: goes straight to the room you " ..
+                      "have killed it in, not the area entrance."
+        end
         mob_text          = ellipsify(mob_text, 32)
 
         -- Destination type: "Mob " = go navigates to mob's kill room (express),
@@ -791,7 +804,7 @@ function print_target_links(list)
         if v.link_type == "area" then
             dest_type  = "Area"
             dest_color = "#808080"
-        elseif v.link_type == "room" and is_express_target(v) then
+        elseif is_express then
             dest_type  = "Mob "
             dest_color = "#FFD700"
         elseif v.link_type == "room" then
@@ -853,6 +866,10 @@ function print_target_links(list)
 
     ColourNote("#808080", "", string.rep("-", 80))
     ColourNote("#808080", "", "Type 'xcp <index>' or click a link to go to that target.")
+    if shown_express then
+        ColourNote("#808080", "", "* express — goes straight to a known kill " ..
+                   "room rather than the area entrance.")
+    end
 end
 
 -- Print ignored targets (out-of-level-range room CP results).
@@ -1470,7 +1487,6 @@ end
 function snd_target_label()
     if type(current_target) ~= "table" then return "your target" end
     return tostring(current_target.name
-                 or current_target.mob
                  or current_target.keyword
                  or "your target")
 end
@@ -1483,7 +1499,7 @@ end
 -- a mob it has never seen.
 function snd_target_keyword()
     if type(current_target) ~= "table" then return nil end
-    local kw = current_target.keyword or current_target.name or current_target.mob
+    local kw = current_target.keyword or current_target.name
     if type(kw) ~= "string" or kw == "" then return nil end
     return kw
 end

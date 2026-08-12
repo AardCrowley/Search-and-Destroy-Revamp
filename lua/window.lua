@@ -535,30 +535,87 @@ end
 
 -- ─── DRAW: TARGET ROW ────────────────────────────────────────────────────────
 
--- Pixel x positions for the four-column table layout.
--- Returns: text_x, hops_x, mob_x, dest_x, right_x
+-- ─── COLUMN VISIBILITY ───────────────────────────────────────────────────────
+--
+-- The index, mob and destination columns are fixed: without them a row cannot
+-- be clicked, read, or acted on. Everything else is the player's to turn off,
+-- because what is worth screen width depends entirely on how they play -- a
+-- narrow window with route optimization off wastes a column on hop counts that
+-- are never populated.
+--
+-- "kw" is off by default and is the exception in kind: it shows the keyword
+-- that would actually be sent for a target. It exists so a wrong keyword can
+-- be seen rather than deduced from a command that quietly does nothing.
+LIST_COLUMNS = {
+    { key = "hops", setting = "col_show_hops", label = "Hops", default = "on",
+      desc = "hops from the previous stop (needs route optimization)" },
+    { key = "diff", setting = "col_show_diff", label = "Diff", default = "on",
+      desc = "difficulty of reaching the mob, 1-5" },
+    { key = "kw",   setting = "col_show_kw",   label = "Kw",   default = "off",
+      desc = "the keyword that would be sent for this target" },
+    { key = "type", setting = "col_show_type", label = "Type", default = "on",
+      desc = "whether 'go' routes to the mob's room or the area entrance" },
+}
+
+function list_column_def(key)
+    for _, c in ipairs(LIST_COLUMNS) do
+        if c.key == key then return c end
+    end
+    return nil
+end
+
+function list_column_shown(key)
+    local def = list_column_def(key)
+    if not def then return true end
+    return snd_get_setting(def.setting, def.default) ~= "off"
+end
+
+-- Pixel x positions for the table layout.
+--
+-- Returns a table rather than a fixed tuple: with columns coming and going,
+-- positional returns silently shift meaning when one is hidden, which is
+-- exactly the kind of mistake that draws a row on top of itself.
 local function list_col_pos(row_x, row_right)
     local tx     = row_x + EDGE_W + 3
     local rx     = row_right or (_width - PAD_RIGHT)
     local idx_w  = WindowTextWidth(win, FONT_ID, "88) ")
-    local hops_w = WindowTextWidth(win, FONT_ID, "9999 ")
-    local diff_w = WindowTextWidth(win, FONT_ID, "Diff ")
-    local rest   = rx - tx - idx_w - hops_w - diff_w
-    local mob_w  = math.floor(rest * 0.54)
-    local diff_x = tx + idx_w + hops_w
-    local mob_x  = diff_x + diff_w
-    return tx, tx + idx_w, diff_x, mob_x, mob_x + mob_w, rx
+    local hops_w = list_column_shown("hops") and WindowTextWidth(win, FONT_ID, "9999 ") or 0
+    local diff_w = list_column_shown("diff") and WindowTextWidth(win, FONT_ID, "Diff ") or 0
+
+    local rest = rx - tx - idx_w - hops_w - diff_w
+    local show_kw = list_column_shown("kw")
+    -- The mob name is what the row is for, so it keeps the larger share; the
+    -- keyword is short by nature and is given only what it needs.
+    local mob_frac = show_kw and 0.40 or 0.54
+    local kw_frac  = show_kw and 0.18 or 0
+    local mob_w    = math.floor(rest * mob_frac)
+    local kw_w     = math.floor(rest * kw_frac)
+
+    local pos = { tx = tx, rx = rx, idx = tx }
+    local x = tx + idx_w
+    if hops_w > 0 then pos.hops = x; x = x + hops_w end
+    if diff_w > 0 then pos.diff = x; x = x + diff_w end
+    pos.mob = x; x = x + mob_w
+    if show_kw then pos.kw = x; x = x + kw_w end
+    pos.dest = x
+    -- Where the mob column has to stop, which is no longer always the
+    -- destination column.
+    pos.after_mob = pos.kw or pos.dest
+    return pos
 end
 
 local function draw_list_header(y, lh, row_right)
-    local tx, hops_x, diff_x, mob_x, dest_x = list_col_pos(PAD_LEFT, row_right)
+    local c   = list_col_pos(PAD_LEFT, row_right)
     local ty  = y + ROW_PAD
     local col = 0x3A5878
-    WindowText(win, FONT_ID, "#",          tx,      ty, 0, 0, col, false)
-    WindowText(win, FONT_ID, "Hops",       hops_x,  ty, 0, 0, col, false)
-    WindowText(win, FONT_ID, "Diff",       diff_x,  ty, 0, 0, col, false)
-    WindowText(win, FONT_ID, "Mob",        mob_x,   ty, 0, 0, col, false)
-    WindowText(win, FONT_ID, "Type  Dest", dest_x,  ty, 0, 0, col, false)
+    WindowText(win, FONT_ID, "#",   c.tx,  ty, 0, 0, col, false)
+    if c.hops then WindowText(win, FONT_ID, "Hops", c.hops, ty, 0, 0, col, false) end
+    if c.diff then WindowText(win, FONT_ID, "Diff", c.diff, ty, 0, 0, col, false) end
+    WindowText(win, FONT_ID, "Mob", c.mob, ty, 0, 0, col, false)
+    if c.kw then WindowText(win, FONT_ID, "Kw", c.kw, ty, 0, 0, col, false) end
+    WindowText(win, FONT_ID,
+        list_column_shown("type") and "Type  Dest" or "Dest",
+        c.dest, ty, 0, 0, col, false)
     WindowLine(win, PAD_LEFT, y + lh - 1, _width - PAD_RIGHT, y + lh - 1,
                0x1A2A3A, miniwin.pen_solid, 1)
 end
@@ -572,21 +629,22 @@ local function draw_target_row(entry, index, row_x, row_y, row_h, row_right)
     local ec = edge_color(entry, index)
     WindowRectOp(win, 2, row_x, row_y + 1, row_x + EDGE_W, row_y + row_h - 1, ec)
 
-    local tx, hops_x, diff_x, mob_x, dest_x, rx = list_col_pos(row_x, row_right)
+    local c   = list_col_pos(row_x, row_right)
+    local rx  = c.rx
     local ty  = row_y + ROW_PAD
     local clr = entry_color(entry, index)
 
     -- ── Index column ──────────────────────────────────────────────────────────
-    WindowText(win, FONT_ID, string.format("%2d) ", index), tx, ty, 0, 0, 0x506070, false)
+    WindowText(win, FONT_ID, string.format("%2d) ", index), c.tx, ty, 0, 0, 0x506070, false)
 
     -- ── Hops column ───────────────────────────────────────────────────────────
     -- Hop count from the previous stop (or from current room for the first entry).
     -- Populated by optimize_target_order; nil when pathing did not run.
     local hops = entry.path_hops
-    if hops and hops < 99999 then
-        WindowText(win, FONT_ID, tostring(hops), hops_x, ty, 0, 0, 0x4488AA, false)
-    elseif hops then
-        WindowText(win, FONT_ID, "?", hops_x, ty, 0, 0, 0x555555, false)
+    if c.hops and hops and hops < 99999 then
+        WindowText(win, FONT_ID, tostring(hops), c.hops, ty, 0, 0, 0x4488AA, false)
+    elseif c.hops and hops then
+        WindowText(win, FONT_ID, "?", c.hops, ty, 0, 0, 0x555555, false)
     end
 
     -- ── Diff column ───────────────────────────────────────────────────────────
@@ -594,8 +652,8 @@ local function draw_target_row(entry, index, row_x, row_y, row_h, row_right)
     -- the mob's own rating when it has one, otherwise its area's. Left blank
     -- when the area is unknown and the mob is unrated.
     local diff = entry.difficulty
-    if diff then
-        WindowText(win, FONT_ID, tostring(diff), diff_x, ty, 0, 0,
+    if c.diff and diff then
+        WindowText(win, FONT_ID, tostring(diff), c.diff, ty, 0, 0,
             DIFF_COLS[diff] or DIFF_COLS[1], false)
     end
 
@@ -605,7 +663,7 @@ local function draw_target_row(entry, index, row_x, row_y, row_h, row_right)
     local qty           = tonumber(entry.qty) or 1
     local char_w        = math.max(1, WindowTextWidth(win, FONT_ID, "W"))
 
-    local cx = mob_x
+    local cx = c.mob
     if entry.unlikely then
         cx = cx + WindowText(win, FONT_ID, "(U) ", cx, ty, 0, 0, 0x506070, false)
     end
@@ -615,7 +673,7 @@ local function draw_target_row(entry, index, row_x, row_y, row_h, row_right)
 
     local qty_sfx    = (qty > 1) and (" x" .. qty) or ""
     local sfx_w      = WindowTextWidth(win, FONT_ID, qty_sfx)
-    local mob_avail  = dest_x - cx - sfx_w - 4
+    local mob_avail  = c.after_mob - cx - sfx_w - 4
     local mob_max_ch = math.max(4, math.floor(mob_avail / char_w))
     local mob_str    = ellipsify(entry.mob or "?", mob_max_ch)
 
@@ -630,6 +688,25 @@ local function draw_target_row(entry, index, row_x, row_y, row_h, row_right)
     if player_killed then
         local sy = ty + math.floor(font_line_h() / 2)
         WindowLine(win, mob_x0, sy, mob_x1, sy, clr, miniwin.pen_solid, 1)
+    end
+
+    -- ── Keyword column ────────────────────────────────────────────────────────
+    -- What would actually be sent for this target. Shown so a keyword that
+    -- does not work can be seen and corrected with 'xset kw', rather than
+    -- inferred from a scan or hunt that quietly finds nothing.
+    if c.kw then
+        local kw_avail  = c.dest - c.kw - 4
+        local kw_max_ch = math.max(3, math.floor(kw_avail / char_w))
+        local kw_str    = entry.kw
+        if type(kw_str) ~= "string" or kw_str == "" then
+            -- Distinct from a keyword that is merely odd: there is none, and
+            -- commands needing one will refuse rather than misfire.
+            WindowText(win, FONT_ID, ellipsify("(none)", kw_max_ch),
+                       c.kw, ty, 0, 0, 0x804040, false)
+        else
+            WindowText(win, FONT_ID, ellipsify(kw_str, kw_max_ch),
+                       c.kw, ty, 0, 0, 0x9088C0, false)
+        end
     end
 
     -- ── Dest column ───────────────────────────────────────────────────────────
@@ -648,8 +725,8 @@ local function draw_target_row(entry, index, row_x, row_y, row_h, row_right)
 
     -- Destination type prefix: "Mob " (gold) = go routes to mob's kill room,
     --                          "Area" (grey) = go routes to area start room only.
-    local ax = dest_x
-    if entry.link_type ~= "unknown" then
+    local ax = c.dest
+    if entry.link_type ~= "unknown" and list_column_shown("type") then
         local dt_str = express and "Mob " or "Area"
         local dt_clr = express and 0xFFD700 or 0x808080
         ax = ax + WindowText(win, FONT_ID, dt_str, ax, ty, 0, 0, dt_clr, false)
@@ -1186,6 +1263,49 @@ end
 -- takes no arguments -- so every form simply flipped visibility. 'xset win on'
 -- could turn the window OFF, and the expand/collapse forms did nothing they
 -- claimed to.
+-- Alias handler: 'xset cols [column] [on|off]'
+--
+-- Bare form lists what exists and what each column is for. A toggle with no
+-- state flips it, which is what you want when the point is to see the effect.
+function xset_cols(name, line, wildcards)
+    local w     = (type(wildcards) == "table" and wildcards) or {}
+    local key   = tostring(w.col or w[1] or ""):lower()
+    local state = tostring(w.state or w[2] or ""):lower()
+
+    if key == "" then
+        InfoNote("SnD: List columns -- 'xset cols <column> [on|off]' to change.")
+        for _, c in ipairs(LIST_COLUMNS) do
+            InfoNote(string.format("  %-5s %-3s  %s",
+                c.key, list_column_shown(c.key) and "on" or "off", c.desc))
+        end
+        InfoNote("  The number, mob and destination columns are always shown.")
+        return
+    end
+
+    local def = list_column_def(key)
+    if not def then
+        local names = {}
+        for _, c in ipairs(LIST_COLUMNS) do names[#names + 1] = c.key end
+        ErrorNote("SnD: xset cols: no column '", key, "'. Choose from: ",
+                  table.concat(names, ", "), ".")
+        return
+    end
+
+    local new_val
+    if state == "" then
+        new_val = list_column_shown(key) and "off" or "on"
+    elseif state == "on" or state == "off" then
+        new_val = state
+    else
+        ErrorNote("SnD: xset cols: '", state, "' is not on or off.")
+        return
+    end
+
+    snd_set_setting(def.setting, new_val, true)
+    InfoNote("SnD: ", def.label, " column is ", new_val, " (", def.desc, ").")
+    if type(xg_draw_window) == "function" then xg_draw_window() end
+end
+
 function xg_window_command(name, line, wildcards)
     local w = (type(wildcards) == "table" and wildcards) or {}
     local opt = tostring(w.onoff or w[1] or ""):lower()

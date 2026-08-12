@@ -76,6 +76,39 @@ local TOPICS = {
     },
 
     {
+        key      = "cols",
+        aliases  = { "xset columns", "xset col" },
+        category = "Window & Display",
+        syntax   = {
+            "xset cols",
+            "xset cols <hops|diff|kw|type> [on|off]",
+        },
+        summary  = "Choose which columns the target list shows.",
+        sections = {
+            {
+                text = "Bare 'xset cols' lists every column, whether it is on, and what it is for. Naming a column with no on/off flips it. The number, mob and destination columns cannot be hidden: without them a row cannot be read or clicked.",
+            },
+            {
+                heading = "hops",
+                text    = "Hops from the previous stop on the route. Only populated when route optimization is on ('xset pathing'), so it is dead space if you leave that off.",
+            },
+            {
+                heading = "diff",
+                text    = "How hard the mob is to reach, 1-5. This is your own rating of getting there, set with 'xset mob rate' or inherited from the area's rating.",
+            },
+            {
+                heading = "kw",
+                text    = "Off by default. Shows the keyword that would actually be sent for each target -- what 'scan', 'hunt' and the quick-kill commands will use. Turn it on when a target is not being found: a wrong keyword is visible here rather than having to be guessed from a command that quietly does nothing. Correct it with 'xset kw'.",
+            },
+            {
+                heading = "type",
+                text    = "Whether 'go' routes to the mob's own kill room ('Mob ') or only to the area entrance ('Area'). Express targets are the ones that route to a room.",
+            },
+        },
+        see_also = { "win", "kw", "pathing" },
+    },
+
+    {
         key      = "silent",
         category = "Window & Display",
         syntax   = { "xset silent <on|off>" },

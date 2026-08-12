@@ -327,7 +327,7 @@ function set_current_mob_keyword(keyword)
         return
     end
 
-    if not (type(current_target) == "table" and current_target.mob) then
+    if not (type(current_target) == "table" and current_target.name) then
         -- On a quest, "use xcp first" is a dead end: xcp only handles quest
         -- targets when quest targeting is switched on, and it does not say so.
         if type(has_active_quest) == "function" and has_active_quest() then
@@ -346,7 +346,7 @@ function set_current_mob_keyword(keyword)
         return
     end
 
-    if save_mob_keyword(current_target.area, current_target.mob, keyword, true) then
+    if save_mob_keyword(current_target.area, current_target.name, keyword, true) then
         if type(update_target_keyword) == "function" then
             update_target_keyword(keyword)
         end

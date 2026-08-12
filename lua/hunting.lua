@@ -61,7 +61,7 @@ function qw_exact()
     end
 
     -- Skip where for mobs tagged nowhere — the server returns no results for them.
-    if mob_has_tag(current_target.mob, current_target.arid, "nowhere") then
+    if mob_has_tag(current_target.name, current_target.area, "nowhere") then
         InfoNote("SnD: Mob tagged nowhere — skipping where (not visible in where output).")
         return
     end
@@ -171,7 +171,7 @@ function qw_no_match()
         -- Show DB-backed room suggestions.
         local rows = lookup_not_found_mob(
             snd_target_label():lower(),
-            current_target.arid or gmcp("room.info.zone") or ""
+            current_target.area or gmcp("room.info.zone") or ""
         )
         if #rows == 0 then return end
 
@@ -216,8 +216,8 @@ function do_hunt_trick(ix, s)
 
     -- Skip hunt entirely for mobs tagged nohunt.
     if has_activity_target() and
-       mob_has_tag(current_target.mob, current_target.arid, "nohunt") then
-        if mob_has_tag(current_target.mob, current_target.arid, "nowhere") then
+       mob_has_tag(current_target.name, current_target.area, "nohunt") then
+        if mob_has_tag(current_target.name, current_target.area, "nowhere") then
             InfoNote("SnD: Mob tagged nohunt+nowhere — skipping both hunt and where.")
         else
             InfoNote("SnD: Mob tagged nohunt — mob cannot be hunted, using quick where.")
@@ -289,7 +289,7 @@ end
 function quick_scan()
     -- Skip scan for mobs tagged noscan (they don't appear in scan output).
     if has_activity_target() and
-       mob_has_tag(current_target.mob, current_target.arid, "noscan") then
+       mob_has_tag(current_target.name, current_target.area, "noscan") then
         InfoNote("SnD: Mob tagged noscan — mob not visible in scan output, skipping scan.")
         return
     end
@@ -308,7 +308,7 @@ end
 
 function smart_scan()
     if has_activity_target() then
-        if mob_has_tag(current_target.mob, current_target.arid, "noscan") then
+        if mob_has_tag(current_target.name, current_target.area, "noscan") then
             InfoNote("SnD: Skipping scan — mob is tagged noscan.")
             return
         end

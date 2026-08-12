@@ -156,7 +156,7 @@ table_width = 80
 -- Keep it in step with the VERSION file; tests/version_consistency_test.lua
 -- fails the build if they disagree, and checks the attribute is the
 -- major.minor of it.
-SND_VERSION = "6.0.1"
+SND_VERSION = "6.0.2-dev"
 
 -- snd_version() also exists in constants.lua, for the modules to call: modules
 -- are updated by 'snd update' while this file is not, so a module calling a
@@ -699,7 +699,7 @@ end
 function auto_hunt_noarg()
     if current_target then
         if has_activity_target()
-        and mob_has_tag(current_target.mob, current_target.arid, "nohunt") then
+        and mob_has_tag(current_target.name, current_target.area, "nohunt") then
             InfoNote("SnD: Skipping hunt — mob is tagged nohunt.")
             return
         end
@@ -4465,7 +4465,8 @@ local _snd_subroutines = {
     "xrt_noarg", "xrun_to_alias", "xset_area_delete", "xset_area_edit_difficulty",
     "xset_area_edit_lock", "xset_area_edit_max", "xset_area_edit_min", "xset_area_edit_name",
     "xset_area_edit_noquest", "xset_area_edit_start", "xset_area_edit_vidblain", "xset_area_list",
-    "xset_area_list_unset", "xset_autonav", "xset_autoreload", "xset_con_overwrite",
+    "xset_area_list_unset", "xset_autonav", "xset_autoreload", "xset_cols",
+    "xset_con_overwrite",
     "xset_debug", "xset_express", "xset_gqalias", "xset_import_area_vars",
     "xset_index_areas", "xset_level_area", "xset_level_area_reset", "xset_level_buffer",
     "xset_mark_current", "xset_mark_set", "xset_marks_delete", "xset_marks_edit",
@@ -4851,6 +4852,7 @@ end
 
         <alias match="^xset nx (?<action>smartscan|con|scan|scanhere|qs|none)$" script="xset_nx" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
+        <alias match="^xset col(?:umn)?s?(?:\s+(?<col>\S+))?(?:\s+(?<state>\S+))?$" script="xset_cols" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^xset con_overwrite" script="xset_con_overwrite" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xset sound$" script="xset_sound" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>

@@ -84,7 +84,7 @@ function action_on_destination_arrived()
         SendNoEcho("consider")
     elseif action == "scan" or action == "scanhere" then
         if has_activity_target()
-        and mob_has_tag(current_target.mob, current_target.arid, "noscan") then
+        and mob_has_tag(current_target.name, current_target.area, "noscan") then
             InfoNote("SnD: Skipping scan — mob is tagged noscan.")
             return
         end
@@ -593,7 +593,13 @@ function xcp_goto_target(index)
             -- Navigate immediately to the express (highest-kill) room.
             set_going_to_room(t.roomid)
             goto_room_id(tostring(t.roomid), t.arid)
-            DebugNote("SnD: xcp express target → room " .. tostring(t.roomid))
+            -- Said out loud, not just to the debug log. An express target
+            -- walks straight to one room instead of the area entrance, which
+            -- looks like ordinary routing gone wrong unless you are told --
+            -- and it is the first thing to know when reporting one.
+            InfoNote("SnD: Express target — going straight to room ",
+                     tostring(t.roomid), ", where you have killed it before. ",
+                     "'nx' cycles the other rooms of that name.")
 
             -- Also find and display all similarly-named rooms so the player
             -- can use nx to cycle through them if the mob isn't in the express
@@ -621,7 +627,7 @@ function xcp_goto_target(index)
                 -- search_rooms_exact populates gotoList with all matching rooms
                 -- and prints the list.  Restore next_room afterward because
                 -- search_rooms_results resets it to -1.
-                search_rooms_exact(express_room_name, t.arid, t.mob)
+                search_rooms_exact(express_room_name, t.arid, t.mob, true)
                 next_room = tostring(t.roomid)
             else
                 -- Fallback if room name is unavailable.
@@ -647,7 +653,7 @@ function xcp_goto_target(index)
 
     else
         -- Room CP: find all matching rooms, display list, and navigate to the best one.
-        search_rooms_exact(t.roomName, t.arid, t.mob)
+        search_rooms_exact(t.roomName, t.arid, t.mob, true)
         -- gotoList[1] is the highest-confidence room after search_rooms_results sorts by sightings.
         if gotoList[1] then
             local rid = tostring(gotoList[1])
@@ -922,7 +928,11 @@ end
 
 -- Exact match: find rooms named room in area arid.
 -- If soh/sohtwo, also searches the paired area.
-function search_rooms_exact(room, arid, mob_name)
+-- no_autonav: the caller is going to navigate itself the moment this
+-- returns, and is only running the search to populate the 'nx' list. Without
+-- it, a search that resolves to exactly one room walks there under autonav and
+-- the caller then walks there again -- two run-tos to the same room.
+function search_rooms_exact(room, arid, mob_name, no_autonav)
     local q
     if arid == "soh" or arid == "sohtwo" then
         q = string.format(
@@ -935,7 +945,7 @@ function search_rooms_exact(room, arid, mob_name)
             "WHERE name=%s AND area=%s ORDER BY area",
             fixsql(room), fixsql(arid))
     end
-    _search_rooms(q, mob_name)
+    _search_rooms(q, mob_name, no_autonav)
 end
 
 -- Fuzzy match: exact name first, then LIKE.
@@ -955,8 +965,8 @@ function search_rooms_fuzzy(room, arid)
 end
 
 -- Internal: execute room search query and display results.
-function _search_rooms(query, mob_name)
-    if not mapper_db_file then search_rooms_results({}); return end
+function _search_rooms(query, mob_name, no_autonav)
+    if not mapper_db_file then search_rooms_results({}, no_autonav); return end
     local mapdb   = sqlite3.open(mapper_db_file)
     local results = {}
     local rmid_list = {}
@@ -1021,11 +1031,11 @@ function _search_rooms(query, mob_name)
         end
     end
 
-    search_rooms_results(results)
+    search_rooms_results(results, no_autonav)
 end
 
 -- Display a list of 'go N' hyperlinks from search_rooms results.
-function search_rooms_results(results)
+function search_rooms_results(results, no_autonav)
     -- If we are mid-navigation for a CP/GQ target and something is overwriting
     -- the room list (e.g. the player searched for a key mob), snapshot the
     -- current nav state so xcp can restore it afterward.
@@ -1153,7 +1163,7 @@ function search_rooms_results(results)
     -- user to click/type 'go N'. Quest retargeting is excluded on purpose --
     -- it can fire on GMCP events (reconnect/login), so auto-walking there
     -- would move the player unexpectedly.
-    if #results == 1 and room_go_idx
+    if #results == 1 and room_go_idx and not no_autonav
     and current_target and current_target.activity ~= "quest"
     and snd_get_setting("autonav_onoff", "off") == "on" then
         goto_number(nil, nil, {index = tostring(room_go_idx)})
