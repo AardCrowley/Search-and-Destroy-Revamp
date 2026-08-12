@@ -98,7 +98,7 @@ function scan_end()
             if running_smart_scan
             and #scanned_mobs_here < mob_count_here then
                 InfoNote("SnD: Potential noscan mob. Running consider.")
-                con_after_scan = true
+                consider_begin(true)
                 SendNoEcho("con")
             end
             if target_found_nearby   then play_target_nearby_sound()     end
@@ -268,6 +268,57 @@ end
 --
 -- Original MUD line is omitted by the trigger (omit_from_output="y"); this
 -- function always reprints with difficulty coloring and activity tags.
+-- The style runs covering line[from..to], split where they straddle the edges.
+--
+-- MUSHclient hands a trigger the whole line's colouring; consider lines are a
+-- sentence with the mob's name somewhere inside, so reproducing the mob's own
+-- colour means slicing that span out of the runs rather than taking them all.
+-- Without this the name was reprinted in a flat silver and every mob looked
+-- alike -- which is most of the information a coloured mob name carries.
+function snd_styles_for_span(style, from, to)
+    if type(style) ~= "table" or not from or not to or to < from then return nil end
+    local out, pos = {}, 1
+    for _, s in ipairs(style) do
+        local text = s.text or ""
+        local s_from, s_to = pos, pos + #text - 1
+        if s_to >= from and s_from <= to then
+            local a = math.max(from, s_from) - s_from + 1
+            local b = math.min(to,   s_to)   - s_from + 1
+            local piece = text:sub(a, b)
+            if piece ~= "" then
+                out[#out + 1] = {
+                    text       = piece,
+                    textcolour = s.textcolour,
+                    backcolour = s.backcolour,
+                }
+            end
+        end
+        pos = s_to + 1
+    end
+    return (#out > 0) and out or nil
+end
+
+-- Print a mob name in the colours the MUD sent it in, falling back to silver
+-- when the span cannot be located (a name the trigger reassembled from more
+-- than one capture, for instance).
+function snd_tell_mob_name(line, style, mob_name_raw)
+    local runs
+    if type(line) == "string" and mob_name_raw ~= "" then
+        local from = line:find(mob_name_raw, 1, true)
+        if from then
+            runs = snd_styles_for_span(style, from, from + #mob_name_raw - 1)
+        end
+    end
+    if not runs then
+        ColourTell("silver", "", mob_name_raw)
+        return
+    end
+    for _, r in ipairs(runs) do
+        ColourTell(RGBColourToName(r.textcolour),
+                   RGBColourToName(r.backcolour), r.text)
+    end
+end
+
 function consider_mob_line(name, line, wildcards, style)
     EnableTrigger("consider_end", true)
 
@@ -278,7 +329,12 @@ function consider_mob_line(name, line, wildcards, style)
     local details = CON_DETAILS[con_index]
     if not details then return end
 
-    local mob_name_raw = Trim(wildcards.mob_name or "")
+    -- Flags captured separately and put back on the front. Every one of these
+    -- triggers was anchored at ^, so a line that opens with "(G) " matched
+    -- none of them -- and where the mob name came first instead, the flag was
+    -- swallowed into the name. Reported by Obyron, whose fix this is.
+    local mob_name_raw = Trim((wildcards.mob_flags or "") ..
+                              (wildcards.mob_name  or ""))
     if mob_name_raw == "" then return end
     -- Strip leading flags for storage and activity matching; keep raw for display.
     local mob_name = strip_mob_flags(mob_name_raw)
@@ -302,7 +358,8 @@ function consider_mob_line(name, line, wildcards, style)
     end
     -- Left pad to column 5 (aligns mob name with untagged lines).
     local pad = string.rep(" ", math.max(0, 5 - tag_len))
-    ColourTell("silver", "", pad .. mob_name_raw)
+    ColourTell("silver", "", pad)
+    snd_tell_mob_name(line, style, mob_name_raw)
     -- Pad to column 32 (at least 2 spaces) before the level range.
     local spacer = string.rep(" ", math.max(2, 32 - #mob_name_raw))
     local con_color = snd_get_setting("color_con_" .. con_index, details.color)
@@ -326,13 +383,36 @@ function con_smart_filter_active()
     return con_after_scan == true
 end
 
+-- Called before sending a consider, so the run reports on itself.
+--
+-- activity_target_found_here is set by mob_activity_tags and cleared at the
+-- end of a SCAN. A consider neither set nor cleared it, so it read whatever
+-- the last scan had left there: after killing the target the flag stayed true
+-- until something else reset it, and a consider then said nothing when it
+-- should have, or said "target not visible here" about a target that no
+-- longer existed. Running 'consider all' appeared to fix it because that
+-- happened to write the flag afresh.
+function consider_begin(smart)
+    activity_target_found_here = false
+    quest_target_found_here    = false
+    con_after_scan             = smart and true or false
+end
+
 function consider_end()
-    if con_after_scan then
-        con_after_scan = false
-        if not activity_target_found_here then
-            InfoNote("SnD: Consider finished; target not visible here.")
+    local was_smart = con_after_scan
+    con_after_scan  = false
+    if was_smart and not activity_target_found_here then
+        -- Only worth saying when there is a target it could have been about.
+        -- With none -- killed, or the campaign over -- "target not visible
+        -- here" describes nothing, which is what made it look like a stale
+        -- target had been left behind.
+        if type(has_activity_target) == "function" and has_activity_target() then
+            InfoNote("SnD: Consider finished; ", snd_target_label(),
+                     " is not visible here.")
         end
     end
+    activity_target_found_here = false
+    quest_target_found_here    = false
     EnableTrigger("consider_end", false)
     EnableTrigger("consider_end_empty", false)
 end

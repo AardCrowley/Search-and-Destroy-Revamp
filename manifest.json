@@ -58,8 +58,8 @@
     },
     {
       "file": "navigation.lua",
-      "hash": "c0872798",
-      "size": 54502
+      "hash": "1ff3ef8c",
+      "size": 54713
     },
     {
       "file": "hunting.lua",
@@ -68,8 +68,8 @@
     },
     {
       "file": "scanning.lua",
-      "hash": "c552790a",
-      "size": 16420
+      "hash": "efb3d29a",
+      "size": 20047
     },
     {
       "file": "history.lua",

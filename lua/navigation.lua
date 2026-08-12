@@ -81,6 +81,9 @@ function action_on_destination_arrived()
         if type(smart_scan) == "function" then smart_scan() end
     elseif action == "con" then
         EnableTrigger("consider_end_empty", true)
+        -- Not the smart-noscan variety: this one is asked for by the arrival
+        -- action and should report everything it sees.
+        if type(consider_begin) == "function" then consider_begin(false) end
         SendNoEcho("consider")
     elseif action == "scan" or action == "scanhere" then
         if has_activity_target()

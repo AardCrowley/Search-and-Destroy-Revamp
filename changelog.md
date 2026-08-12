@@ -31,6 +31,31 @@
   blocks them ours is short by the walk out, which is 4 hops in the case
   tested, not 44.
 
+- **Fixed: `consider` ignored any line that did not start with the mob.**
+  `con all` puts the mob's flags in front of each line, and every consider
+  trigger was anchored with no allowance for them — so lines whose wording
+  begins with fixed text (`No Problem! ...`) matched nothing at all and were
+  printed raw, repeatedly.  Where the wording begins with the mob instead,
+  the flag was swallowed into its name, so the same mob was recorded under
+  two different names depending on the message.
+
+  Reported by **Obyron**, whose fix this is: capture the flags separately and
+  put them back on the front.
+
+- **Consider keeps the mob's colours.**
+  The name was reprinted in a flat silver, discarding the colouring the MUD
+  sent — which is most of what a consider line tells you at a glance.  The
+  name's own span is now sliced out of the line's styles, so a name that
+  changes colour partway keeps doing so.
+
+- **Fixed: `consider` reported on a target that no longer existed.**
+  "Consider finished; target not visible here" was decided from a flag that
+  only a *scan* ever cleared, so a consider read whatever the last scan had
+  left behind — and went on saying it after the mob was killed or the
+  campaign ended.  Running `consider all` appeared to fix it only because
+  that rewrote the flag.  Each consider now starts from a clean slate, and
+  says nothing when there is no target for it to be about.
+
 - **Fixed: `xset kw <keyword>` stored the wrong thing entirely.**
   It set the keyword to something like `*alias2533801`.  The alias called a
   function that takes the keyword as its only argument, but MUSHclient calls

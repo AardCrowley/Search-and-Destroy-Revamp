@@ -3013,7 +3013,9 @@ end
 function consider_unkillable(name, line, wildcards, style)
     EnableTrigger("consider_end", true)
 
-    local mob_name = Trim(wildcards.name)
+    -- Same flags fix as consider_mob_line: the pattern is anchored, so a
+    -- leading "(G) " kept it from matching at all.
+    local mob_name = Trim((wildcards.mob_flags or "") .. (wildcards.name or ""))
     if mob_name == "" then return end
 
     -- Persist sighting even for unkillable mobs.
@@ -4827,37 +4829,37 @@ end
         <!-- Consider: difficulty-coloured mob output (one trigger per CONSIDER_OUTCOMES entry). -->
         <!-- Original lines are omitted; consider_mob_line reprints with colour + activity tags. -->
 
-        <trigger match="^You would stomp (?<mob_name>.+?) into the ground\.$" script="consider_mob_line" name="consider_mob_1" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)You would stomp (?<mob_name>.+?) into the ground\.$" script="consider_mob_line" name="consider_mob_1" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^(?<mob_name>.+?) would be easy, but is it even worth the work out\?$" script="consider_mob_line" name="consider_mob_2" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)(?<mob_name>.+?) would be easy, but is it even worth the work out\?$" script="consider_mob_line" name="consider_mob_2" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^No Problem! (?<mob_name>.+?) is weak compared to you\.$" script="consider_mob_line" name="consider_mob_3" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)No Problem! (?<mob_name>.+?) is weak compared to you\.$" script="consider_mob_line" name="consider_mob_3" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^(?<mob_name>.+?) looks a little worried about the idea\.$" script="consider_mob_line" name="consider_mob_4" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)(?<mob_name>.+?) looks a little worried about the idea\.$" script="consider_mob_line" name="consider_mob_4" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^(?<mob_name>.+?) should be a fair fight!$" script="consider_mob_line" name="consider_mob_5" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)(?<mob_name>.+?) should be a fair fight!$" script="consider_mob_line" name="consider_mob_5" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^(?<mob_name>.+?) snickers nervously\.$" script="consider_mob_line" name="consider_mob_6" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)(?<mob_name>.+?) snickers nervously\.$" script="consider_mob_line" name="consider_mob_6" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^(?<mob_name>.+?) chuckles at the thought of you fighting \S+\.$" script="consider_mob_line" name="consider_mob_7" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)(?<mob_name>.+?) chuckles at the thought of you fighting \S+\.$" script="consider_mob_line" name="consider_mob_7" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^Best run away from (?<mob_name>.+?) while you can!$" script="consider_mob_line" name="consider_mob_8" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)Best run away from (?<mob_name>.+?) while you can!$" script="consider_mob_line" name="consider_mob_8" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^Challenging (?<mob_name>.+?) would be either very brave or very stupid\.$" script="consider_mob_line" name="consider_mob_9" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)Challenging (?<mob_name>.+?) would be either very brave or very stupid\.$" script="consider_mob_line" name="consider_mob_9" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^(?<mob_name>.+?) would crush you like a bug!$" script="consider_mob_line" name="consider_mob_10" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)(?<mob_name>.+?) would crush you like a bug!$" script="consider_mob_line" name="consider_mob_10" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^(?<mob_name>.+?) would dance on your grave!$" script="consider_mob_line" name="consider_mob_11" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)(?<mob_name>.+?) would dance on your grave!$" script="consider_mob_line" name="consider_mob_11" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^(?<mob_name>.+?) says 'BEGONE FROM MY SIGHT unworthy!'$" script="consider_mob_line" name="consider_mob_12" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)(?<mob_name>.+?) says 'BEGONE FROM MY SIGHT unworthy!'$" script="consider_mob_line" name="consider_mob_12" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^You would be completely annihilated by (?<mob_name>.+?)!$" script="consider_mob_line" name="consider_mob_13" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)You would be completely annihilated by (?<mob_name>.+?)!$" script="consider_mob_line" name="consider_mob_13" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
         <!-- Consider: unkillable mobs (divine protection / shopkeeper). -->
 
-        <trigger match="^(?<name>.+) has divine protection\.$" script="consider_unkillable" name="consider_protected" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)(?<name>.+) has divine protection\.$" script="consider_unkillable" name="consider_protected" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
-        <trigger match="^If you killed (?<name>.+), who would serve .+ customers\?$" script="consider_unkillable" name="consider_shopkeeper" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
+        <trigger match="^(?<mob_flags>(?:(?:\([^)]+\)|\[[^\]]+\])\s*)*)If you killed (?<name>.+), who would serve .+ customers\?$" script="consider_unkillable" name="consider_shopkeeper" group="consider" enabled="y" regexp="y" sequence="100" omit_from_output="y" send_to="12"></trigger>
 
         <trigger match="^$" name="consider_end" group="consider_end" script="consider_end" enabled="n" regexp="y" sequence="100" omit_from_output="n" send_to="12"></trigger>
 
