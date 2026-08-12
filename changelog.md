@@ -45,8 +45,9 @@
 - **Consider keeps the mob's colours.**
   The name was reprinted in a flat silver, discarding the colouring the MUD
   sent — which is most of what a consider line tells you at a glance.  The
-  name's own span is now sliced out of the line's styles, so a name that
-  changes colour partway keeps doing so.
+  name's own span is now cut out of the line's styles with `TruncateStyles`
+  from the Aardwolf package, so a name that changes colour partway keeps
+  doing so.
 
 - **Fixed: `consider` reported on a target that no longer existed.**
   "Consider finished; target not visible here" was decided from a flag that

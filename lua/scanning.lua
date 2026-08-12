@@ -268,54 +268,32 @@ end
 --
 -- Original MUD line is omitted by the trigger (omit_from_output="y"); this
 -- function always reprints with difficulty coloring and activity tags.
--- The style runs covering line[from..to], split where they straddle the edges.
+-- Print a mob name in the colours the MUD sent it in.
 --
--- MUSHclient hands a trigger the whole line's colouring; consider lines are a
--- sentence with the mob's name somewhere inside, so reproducing the mob's own
--- colour means slicing that span out of the runs rather than taking them all.
--- Without this the name was reprinted in a flat silver and every mob looked
--- alike -- which is most of the information a coloured mob name carries.
-function snd_styles_for_span(style, from, to)
-    if type(style) ~= "table" or not from or not to or to < from then return nil end
-    local out, pos = {}, 1
-    for _, s in ipairs(style) do
-        local text = s.text or ""
-        local s_from, s_to = pos, pos + #text - 1
-        if s_to >= from and s_from <= to then
-            local a = math.max(from, s_from) - s_from + 1
-            local b = math.min(to,   s_to)   - s_from + 1
-            local piece = text:sub(a, b)
-            if piece ~= "" then
-                out[#out + 1] = {
-                    text       = piece,
-                    textcolour = s.textcolour,
-                    backcolour = s.backcolour,
-                }
-            end
-        end
-        pos = s_to + 1
-    end
-    return (#out > 0) and out or nil
-end
-
--- Print a mob name in the colours the MUD sent it in, falling back to silver
--- when the span cannot be located (a name the trigger reassembled from more
--- than one capture, for instance).
+-- MUSHclient hands a trigger the whole line's styles, and a consider line is a
+-- sentence with the mob's name somewhere inside it, so the name's own span has
+-- to be cut out of the runs. TruncateStyles does exactly that -- it is part of
+-- aardwolf_colors.lua, which the plugin already loads and already leans on for
+-- strip_colours, so there is no reason to carry a second implementation of it.
+--
+-- Falls back to plain silver when the name cannot be located in the line,
+-- which happens when a trigger reassembles it from more than one capture.
 function snd_tell_mob_name(line, style, mob_name_raw)
     local runs
-    if type(line) == "string" and mob_name_raw ~= "" then
+    if type(line) == "string" and mob_name_raw ~= ""
+    and type(style) == "table" and type(TruncateStyles) == "function" then
         local from = line:find(mob_name_raw, 1, true)
         if from then
-            runs = snd_styles_for_span(style, from, from + #mob_name_raw - 1)
+            runs = TruncateStyles(style, from, from + #mob_name_raw - 1)
         end
     end
-    if not runs then
+    if type(runs) ~= "table" or not runs[1] then
         ColourTell("silver", "", mob_name_raw)
         return
     end
     for _, r in ipairs(runs) do
         ColourTell(RGBColourToName(r.textcolour),
-                   RGBColourToName(r.backcolour), r.text)
+                   RGBColourToName(r.backcolour), r.text or "")
     end
 end
 
