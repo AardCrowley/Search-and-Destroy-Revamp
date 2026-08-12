@@ -562,14 +562,14 @@ local function seed()
                 local sr_sql = (sr > 0) and tostring(sr) or "NULL"
                 -- Insert row if key does not exist yet.
                 d:exec(
-                    "INSERT OR IGNORE INTO areas (key, name, start_room, noquest, vidblain, source) " ..
+                    "INSERT OR IGNORE INTO areas (key, name, start_room, noquest, vidblain, source, difficulty) " ..
                     "VALUES (" ..
                     fixsql(a.k) .. ", " ..
                     fixsql(a.name) .. ", " ..
                     sr_sql .. ", " ..
                     (a.nq  and "1" or "0") .. ", " ..
                     (a.vid and "1" or "0") .. ", " ..
-                    "'seed')"
+                    "'seed', 0)"
                 )
                 -- For rows that already exist, fill in start_room if currently missing.
                 if sr > 0 then

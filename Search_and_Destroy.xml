@@ -653,12 +653,17 @@ end
 
 -- xset_silentMode (old name) removed; active handler is xset_silent_mode in hunting.lua.
 
+-- 'xm {a mob} <room>' -- the braced mob is optional, and was captured and then
+-- dropped. It is what ranks the results by where that mob has actually been
+-- seen, so offering the syntax and ignoring it made the list look unsorted.
 function map_area(name, line, wildcards)
-    search_rooms_fuzzy(wildcards.loc, current_room.arid)
+    local w = (type(wildcards) == "table" and wildcards) or {}
+    search_rooms_fuzzy(w.loc, current_room.arid, w.mob)
 end
 
 function map_area_all(name, line, wildcards)
-    search_rooms_fuzzy(wildcards.loc)
+    local w = (type(wildcards) == "table" and wildcards) or {}
+    search_rooms_fuzzy(w.loc, nil, w.mob)
 end
 
 --	[[ "xwhere" command ]]
@@ -1278,7 +1283,10 @@ function xtest_gq_lose(name, line, wildcards)
     end
 
     local gqid = tonumber(wildcards.num) or 123
-    local noextended = #wildcards.noextended > 0
+    -- The alias captures <noextend>. Reading noextended got nil, and taking
+    -- the length of nil raises -- so this did not merely misbehave, it threw
+    -- every time the command was used.
+    local noextended = #(wildcards.noextend or "") > 0
     if mock_gquests[gqid] then
         simulate_gq_lose(gqid, noextended)
         if noextended then
@@ -2236,7 +2244,9 @@ end
 
 function xtest_loadroom(name, line, wildcards)
     local ri = current_room
-    local room_id = tonumber(wildcards.room_id) or tonumber(ri.rmid) or -1
+    -- The alias captures <roomid>; reading room_id got nil every time, so
+    -- 'xtest loadroom 1234' silently inspected the room you were standing in.
+    local room_id = tonumber(wildcards.roomid) or tonumber(ri.rmid) or -1
     local roomdata = {}
     local sql_roomdata =
         "SELECT uid, name, area, info, noportal, norecall, ignore_exits_mismatch " .. "FROM rooms " .. "WHERE uid = %s "
@@ -2760,8 +2770,8 @@ function rawCopyPwarDB()
             if rid and rid > 0 then
                 -- Ensure the area row exists before updating start_room.
                 db:exec(
-                    "INSERT OR IGNORE INTO areas (key, name, source) VALUES (" ..
-                    fixsql(row.areaname) .. ", " .. fixsql(row.areaname) .. ", 'scrape')"
+                    "INSERT OR IGNORE INTO areas (key, name, source, difficulty) VALUES (" ..
+                    fixsql(row.areaname) .. ", " .. fixsql(row.areaname) .. ", 'scrape', 0)"
                 )
                 db:exec(
                     "UPDATE areas SET start_room=" .. rid ..
@@ -3233,12 +3243,50 @@ end
 function xset_area_edit_difficulty(name, line, wildcards)
     local key = wildcards["key"]
     local n   = tonumber(wildcards["diff"])
-    if not n or n < 1 or n > 5 then
-        ErrorNote("SnD: difficulty must be 1-5.")
+    if not n or n < 0 or n > 5 then
+        ErrorNote("SnD: difficulty must be 1-5, or 0 to clear it.")
         return
     end
-    if area_edit(key, "difficulty", n) then
-        InfoNote("Area '", key, "' difficulty set to ", tostring(math.floor(n)), "/5.")
+    n = math.floor(n)
+    if not area_edit(key, "difficulty", n) then return end
+
+    if n == 0 then
+        InfoNote("Area '", key, "' difficulty cleared -- it is unrated again.")
+    else
+        InfoNote("Area '", key, "' difficulty set to ", tostring(n), "/5.")
+    end
+
+    -- Stamp the area's rating onto every mob there that has none of its own.
+    --
+    -- Rating an area already covers its unrated mobs when the list is drawn,
+    -- so this changes no routing on its own. What it does is make the stored
+    -- data say what you meant: 'xset mob tags' on any of those mobs now
+    -- reports the rating it is actually being routed by, instead of a blank
+    -- that has to be mentally resolved against the area.
+    --
+    -- Only rows already in mob_tags exist to update; a mob you have never
+    -- tagged still inherits the area's rating when it appears in a list.
+    local stamped = 0
+    if n > 0 then
+        pcall(function()
+            local db = db_open()
+            db:exec("UPDATE mob_tags SET difficulty = " .. n ..
+                    " WHERE zone = " .. fixsql(key) ..
+                    " AND (difficulty IS NULL OR difficulty = 0)")
+            stamped = db:changes() or 0
+            db_close(db)
+        end)
+        if stamped > 0 then
+            InfoNote("SnD: ", tostring(stamped), " mob(s) there had no rating ",
+                     "of their own and now carry ", tostring(n),
+                     ". Rate one individually to override it.")
+        end
+    end
+
+    if type(build_main_target_list) == "function"
+    and type(current_activity) == "string"
+    and (current_activity == "cp" or current_activity == "gq") then
+        build_main_target_list(current_activity, area_room_type)
     end
 end
 

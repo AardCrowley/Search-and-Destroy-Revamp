@@ -949,7 +949,7 @@ function search_rooms_exact(room, arid, mob_name, no_autonav)
 end
 
 -- Fuzzy match: exact name first, then LIKE.
-function search_rooms_fuzzy(room, arid)
+function search_rooms_fuzzy(room, arid, mob_name)
     arid = arid or "all"
     local like_room = "%" .. room .. "%"
     local q = string.format([[
@@ -961,7 +961,7 @@ function search_rooms_fuzzy(room, arid)
         ORDER BY area, ord DESC
     ]], fixsql(room), fixsql(arid), fixsql(arid),
         fixsql(room), fixsql(like_room), fixsql(arid), fixsql(arid))
-    _search_rooms(q, nil)
+    _search_rooms(q, (mob_name ~= "") and mob_name or nil)
 end
 
 -- Internal: execute room search query and display results.
@@ -1207,7 +1207,7 @@ local NX_DESC = {
 -- default forever.
 function xset_nx(name, line, wildcards)
     local w   = (type(wildcards) == "table" and wildcards) or {}
-    local opt = Trim(tostring(w.action or w.option or w[1] or "")):lower()
+    local opt = Trim(tostring(w.action or w[1] or "")):lower()
 
     if NX_OPTIONS[opt] then
         snd_set_setting("nx_action", opt, false)

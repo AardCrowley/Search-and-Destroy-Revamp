@@ -31,6 +31,35 @@
   blocks them ours is short by the walk out, which is 4 hops in the case
   tested, not 44.
 
+- **Fixed: `xset express` did nothing at all.**
+  The alias captures the state and the kill threshold under one pair of
+  names, and the handler read a different one — so `on`, `off` and the
+  threshold all fell straight through to the "show current setting" branch,
+  reported the unchanged value back, and changed nothing.  Nothing errored,
+  which is why it looked like express mode simply not working.
+
+  A check now fails the build if any alias captures something its handler
+  never reads, or reads a name nothing supplies.  It immediately found three
+  more: `xtest loadroom <room>` ignored the room you named, `xm {mob} <room>`
+  accepted a mob and discarded it (that mob is what ranks the results), and
+  `xtest simulate gq lose` threw every time it was used.
+
+- **Areas start unrated instead of rated 1.**
+  Every area was created with difficulty 1, so a deliberate "easy" could not
+  be told apart from an area nobody had ever looked at — and route
+  optimization treated the entire unrated map as its top-priority tier.
+  Unrated is now 0, shown blank, and `xset area edit <area> difficulty 0`
+  clears a rating you no longer want.
+
+  Rating an area also stamps that rating onto every mob there without one of
+  its own, so `xset mob tags` reports the number the mob is actually routed
+  by rather than a blank you have to resolve against its area yourself.  Mobs
+  you rate individually are left alone.
+
+  Existing databases keep whatever is already stored: a 1 written by the old
+  default cannot be told from a 1 you chose, so nothing guesses.  Set the
+  areas you never rated to 0 if you want them blank.
+
 - **Fixed: `xcp` walked you to the target twice.**
   Reported by two players, and it looked intermittent because it needs three
   things at once: `xset autonav on`, and a target that is either express or

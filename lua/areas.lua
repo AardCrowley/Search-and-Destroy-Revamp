@@ -507,9 +507,9 @@ function xset_import_area_vars(name, line, wildcards)
                     local mn = tonumber(data.min)
                     local mx = tonumber(data.max)
                     db:exec(
-                        "INSERT OR IGNORE INTO areas (key, name, minlvl, maxlvl, source) " ..
+                        "INSERT OR IGNORE INTO areas (key, name, minlvl, maxlvl, source, difficulty) " ..
                         "VALUES (" .. fixsql(key) .. ", " .. fixsql(tostring(disp_name)) ..
-                        ", " .. (mn or 1) .. ", " .. (mx or 201) .. ", 'scrape')"
+                        ", " .. (mn or 1) .. ", " .. (mx or 201) .. ", 'scrape', 0)"
                     )
                     if db:changes() > 0 then imported_areas = imported_areas + 1 end
                 end
@@ -655,7 +655,7 @@ function areas_json_received(url, status, content)
                     end
                     db:exec(
                         "INSERT OR IGNORE INTO areas " ..
-                        "(key, name, minlvl, maxlvl, lock, start_room, noquest, vidblain, source) " ..
+                        "(key, name, minlvl, maxlvl, lock, start_room, noquest, vidblain, source, difficulty) " ..
                         "VALUES (" ..
                         fixsql(entry.key)                         .. ", " ..
                         fixsql(entry.name or entry.key)           .. ", " ..
@@ -665,7 +665,8 @@ function areas_json_received(url, status, content)
                         start_sql                                  .. ", " ..
                         (entry.noquest  and "1" or "0")           .. ", " ..
                         (entry.vidblain and "1" or "0")           .. ", " ..
-                        "'json'" ..
+                        "'json'" .. ", " ..
+                        "0" ..
                         ")"
                     )
                     if db:changes() > 0 then inserted = inserted + 1 end
@@ -982,14 +983,15 @@ local function _areas_index_process(captured_styles, silent)
                 if a then
                     db:exec(
                         "INSERT OR IGNORE INTO areas " ..
-                        "(key, name, minlvl, maxlvl, lock, start_room, noquest, source) " ..
+                        "(key, name, minlvl, maxlvl, lock, start_room, noquest, source, difficulty) " ..
                         "VALUES (" ..
                         fixsql(a.key)  .. ", " ..
                         fixsql(a.name) .. ", " ..
                         a.min_l .. ", " .. a.max_l .. ", " .. a.lock .. ", " ..
                         "-1, " ..
                         a.noquest .. ", " ..
-                        "'scrape'" ..
+                        "'scrape'" .. ", " ..
+                        "0" ..
                         ")"
                     )
                     if db:changes() > 0 then inserted = inserted + 1

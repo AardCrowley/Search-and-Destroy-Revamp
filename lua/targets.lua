@@ -246,7 +246,11 @@ local function attach_difficulty(list)
         for row in db:nrows(
             "SELECT key, difficulty FROM areas WHERE key IN (" .. table.concat(arids, ",") .. ")"
         ) do
-            diff_by_arid[row.key] = tonumber(row.difficulty)
+            -- 0 is "not rated", not "rated zero": leaving it as a number
+            -- would draw a 0 in the Diff column and sort the area as easier
+            -- than anything anyone had actually rated.
+            local d = tonumber(row.difficulty)
+            diff_by_arid[row.key] = (d and d > 0) and d or nil
         end
         db_close(db)
     end)

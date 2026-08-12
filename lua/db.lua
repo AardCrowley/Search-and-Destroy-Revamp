@@ -137,7 +137,12 @@ local function create_areas_table(db)
             start_room INTEGER,
             noquest    INTEGER NOT NULL DEFAULT 0,
             vidblain   INTEGER NOT NULL DEFAULT 0,
-            difficulty INTEGER NOT NULL DEFAULT 1,
+            -- 0 means "not rated", the convention mob_tags.difficulty
+            -- already uses. This defaulted to 1, so every area was born
+            -- rated easiest, a deliberate 1 could not be told from an area
+            -- nobody had looked at, and routing treated the entire unrated
+            -- map as its top-priority tier.
+            difficulty INTEGER NOT NULL DEFAULT 0,
             source     TEXT    NOT NULL DEFAULT 'scrape',
             updated_at INTEGER
         )
@@ -393,7 +398,7 @@ local function migration_step2_create_tables(db)
     end
     if not column_exists(db, "areas", "difficulty") then
         dbcheck(db, db:exec(
-            "ALTER TABLE areas ADD COLUMN difficulty INTEGER NOT NULL DEFAULT 1"
+            "ALTER TABLE areas ADD COLUMN difficulty INTEGER NOT NULL DEFAULT 0"
         ), "add areas.difficulty column")
     end
     create_mob_sightings_table(db)
@@ -444,8 +449,8 @@ local function migration_step3_mobs(db)
 
     -- Ensure every zone key referenced by mobs exists in areas.
     dbcheck(db, db:exec([[
-        INSERT OR IGNORE INTO areas (key, name, source)
-        SELECT DISTINCT zone, zone, 'stub'
+        INSERT OR IGNORE INTO areas (key, name, source, difficulty)
+        SELECT DISTINCT zone, zone, 'stub', 0
         FROM mobs
         WHERE zone IS NOT NULL AND zone != ''
     ]]), "step3: stub missing area zones")
@@ -475,8 +480,8 @@ local function migration_step4_keywords(db)
 
     -- Same FK requirement as step 3: stub-insert any area_name values not in areas.
     dbcheck(db, db:exec([[
-        INSERT OR IGNORE INTO areas (key, name, source)
-        SELECT DISTINCT area_name, area_name, 'stub'
+        INSERT OR IGNORE INTO areas (key, name, source, difficulty)
+        SELECT DISTINCT area_name, area_name, 'stub', 0
         FROM mob_keyword_exceptions
         WHERE area_name IS NOT NULL AND area_name != ''
     ]]), "step4: stub missing area zones")
@@ -501,7 +506,7 @@ local function migration_step5_areas(db)
 
     dbcheck(db, db:exec([[
         INSERT OR IGNORE INTO areas (key, name, minlvl, maxlvl, lock,
-                                     start_room, noquest, vidblain)
+                                     start_room, noquest, vidblain, difficulty)
         SELECT
             key,
             name,
@@ -510,7 +515,8 @@ local function migration_step5_areas(db)
             CAST(lock AS INTEGER),
             CAST(startRoom AS INTEGER),
             CASE WHEN noquest = 'true' OR noquest = '1' THEN 1 ELSE 0 END,
-            CASE WHEN vidblain = 'true' OR vidblain = '1' THEN 1 ELSE 0 END
+            CASE WHEN vidblain = 'true' OR vidblain = '1' THEN 1 ELSE 0 END,
+            0
         FROM area
         WHERE key IS NOT NULL AND key != ''
     ]]), "step5: areas insert")
@@ -622,11 +628,11 @@ local function migration_step9_area_vars(db)
                     local minl = tonumber(data.min) or 1
                     local maxl = tonumber(data.max) or 201
                     db:exec(
-                        "INSERT OR IGNORE INTO areas (key, name, minlvl, maxlvl, source) " ..
+                        "INSERT OR IGNORE INTO areas (key, name, minlvl, maxlvl, source, difficulty) " ..
                         "VALUES (" ..
                         fixsql(key) .. ", " ..
                         fixsql(tostring(area_name)) .. ", " ..
-                        minl .. ", " .. maxl .. ", 'scrape')"
+                        minl .. ", " .. maxl .. ", 'scrape', 0)"
                     )
                 end
             end
