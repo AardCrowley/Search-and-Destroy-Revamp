@@ -1,7 +1,4 @@
-# v6.0.2-dev
-
-**A development build.**  Nothing here is in a public release yet.  Run
-`snd version` to see whether you are on one of these.
+# v6.0.2
 
 ## Bug Fixes
 
