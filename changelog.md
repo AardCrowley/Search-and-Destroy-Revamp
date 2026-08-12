@@ -71,6 +71,24 @@
   `betaVersion` / `prevBeta` globals that were only ever `nil` and existed to
   decorate a message.  All gone rather than left looking functional.
 
+- **Updates now apply themselves, when nothing is in progress.**
+  Fetching new modules did nothing until the plugin reloaded, and it left that
+  to you — while replacing the plugin file reloaded unasked, which is the more
+  disruptive of the two.  A module update now reloads once there is nothing to
+  interrupt: no campaign or quest target loaded, no route running, not in
+  combat.  Otherwise it says what it is waiting on and leaves the timing to
+  you.  `xset autoreload off` restores the old behaviour.
+
+  It waits because a reload empties the in-memory campaign state — the target
+  list, the current target, the route.  Nothing is lost, since settings, marks,
+  keywords and history live in the database.
+
+- **Fixed: `cp check` after a reload reported an internal error.**
+  It answered "build_main_target_list: unknown area_or_room value: none",
+  naming a variable no player has reason to have heard of.  The campaign type
+  is parsed from `cp info` output and does not survive a reload, so the check
+  had nothing to work from.  It now says to run `cp info`, and why.
+
 - **New: an always-on trace buffer.**
   Debug logging only ever helped if it was already switched on — and it never
   is the first time something goes wrong.  Every debug and error note is now
@@ -130,10 +148,12 @@
   with its published version is reported rather than quietly updating on every
   run forever.
 
-  **Existing v6.0 installs need `Search_and_Destroy.xml` replaced by hand once**
-  — the v6.0 plugin file has no way to replace itself.  Modules and sounds
-  already update on their own, and your database is untouched.  From 6.0.1
-  onward the plugin keeps itself current.
+  **No manual step after all.**  The plugin file cannot replace itself on
+  v6.0, but modules still update there — so the upgrade is driven from a
+  module instead.  A v6.0 install running `snd update` gets the new modules,
+  and on the next load one of them notices the plugin file is behind, fetches
+  it and reloads.  Everything it needs already exists in v6.0's plugin file.
+  Your database, settings, marks and keywords are untouched throughout.
 
 - **Fixed: `xset win` ignored what you asked it to do.**
   The alias accepts `on`, `off`, `show`, `hide`, `max`, `expand`, `min` and

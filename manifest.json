@@ -8,18 +8,18 @@
     },
     {
       "file": "util.lua",
-      "hash": "5eb11410",
-      "size": 19387
+      "hash": "a74abe78",
+      "size": 21546
     },
     {
       "file": "db.lua",
-      "hash": "20034d98",
-      "size": 35446
+      "hash": "5c64dd1a",
+      "size": 35869
     },
     {
       "file": "settings.lua",
-      "hash": "aa92df86",
-      "size": 13180
+      "hash": "cdd5119a",
+      "size": 13280
     },
     {
       "file": "characters.lua",
@@ -43,8 +43,8 @@
     },
     {
       "file": "targets.lua",
-      "hash": "870fab60",
-      "size": 67286
+      "hash": "fd58da48",
+      "size": 67933
     },
     {
       "file": "pathing.lua",
@@ -58,8 +58,8 @@
     },
     {
       "file": "navigation.lua",
-      "hash": "b42b8a36",
-      "size": 52362
+      "hash": "402d0bfa",
+      "size": 53633
     },
     {
       "file": "hunting.lua",
@@ -88,8 +88,8 @@
     },
     {
       "file": "help.lua",
-      "hash": "5c2029b0",
-      "size": 83217
+      "hash": "62bf421d",
+      "size": 84412
     },
     {
       "file": "changelog.lua",

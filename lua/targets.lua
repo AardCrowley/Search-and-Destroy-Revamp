@@ -290,6 +290,16 @@ function build_main_target_list(cp_or_gq, area_or_room)
         main_target_list = build_area_targets(cp_or_gq)
     elseif area_or_room == "room" then
         main_target_list, room_targets_ignored = build_room_targets(cp_or_gq)
+    elseif area_or_room == "none" or area_or_room == nil then
+        -- Reached whenever the campaign type is not known yet, which after a
+        -- reload is every time: area_room_type is set by parsing 'cp info' /
+        -- 'gq info' output, and it does not survive one. Running the check
+        -- first then produced an internal error naming a variable the player
+        -- has no reason to have heard of.
+        local what = (cp_or_gq == "gq") and "gq info" or "cp info"
+        InfoNote("SnD: run '", what, "' first -- the target list is built from ",
+                 "its output, and that does not survive a reload.")
+        return
     else
         ErrorNote("SnD: build_main_target_list: unknown area_or_room value: " .. tostring(area_or_room))
         return

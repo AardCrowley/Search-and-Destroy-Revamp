@@ -1214,6 +1214,33 @@ function xset_nx(name, line, wildcards)
     end
 end
 
+-- Alias handler: 'xset autoreload [on|off]'.
+--
+-- Whether a module update reloads the plugin by itself. On by default: the
+-- plugin file update already reloads unasked, and updates that sit unapplied
+-- are worse than a reload -- the modules on disk no longer match the ones
+-- running. It waits for a quiet moment either way; see _snd_reload_or_prompt.
+function xset_autoreload(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local opt = Trim(tostring(w.state or w[1] or "")):lower()
+
+    if opt == "on" or opt == "off" then
+        snd_set_setting("auto_reload", opt, true)
+        InfoNote("SnD: auto-reload after updates is now ", opt:upper(), ".")
+        if opt == "on" then
+            InfoNote("SnD: it waits until you are not mid-campaign or mid-route.")
+        end
+    elseif opt == "" then
+        local cur = snd_get_setting("auto_reload", "on")
+        InfoNote("SnD: auto-reload after updates: ", cur:upper(), ".")
+        InfoNote("SnD: when on, a module update reloads once nothing is in ",
+                 "progress; otherwise it tells you to type 'snd reload'.")
+        InfoNote("SnD: Usage: xset autoreload [on|off]")
+    else
+        ErrorNote("SnD: xset autoreload: use 'on' or 'off'.")
+    end
+end
+
 -- ─── XSET LEVEL BUFFER ────────────────────────────────────────────────────────
 
 -- Alias handler: 'xset level buffer [<n>]'

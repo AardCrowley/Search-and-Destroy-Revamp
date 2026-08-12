@@ -422,6 +422,51 @@ function xset_debug(name, line, wildcards)
 end
 
 -- Alias handler: 'snd debug [clear]'
+-- ─── PLUGIN FILE SELF-UPGRADE ────────────────────────────────────────────────
+--
+-- Replace the plugin file when it is older than the published release.
+--
+-- This lives in a module on purpose. Modules are refreshed by 'snd update' on
+-- every install including v6.0, but the plugin file itself is only replaced by
+-- code that lives IN the plugin file -- and v6.0's has no such code, because
+-- do_update() was never called from anywhere. Left there, every v6.0 user would
+-- have to replace Search_and_Destroy.xml by hand. Put here, it arrives with the
+-- ordinary module update and does the job itself.
+--
+-- Everything it needs already exists in v6.0's plugin file: snd_raw_url,
+-- download_file, do_update and callback_update_plugin. Each is checked before
+-- use anyway, since a module must never assume what the plugin file provides.
+local _plugin_upgrade_checked = false
+
+function snd_upgrade_plugin_file_if_stale()
+    if _plugin_upgrade_checked then return end
+    _plugin_upgrade_checked = true          -- once per session, whatever happens
+
+    if type(snd_get_setting) == "function"
+    and snd_get_setting("automatic_update_checks", "on") ~= "on" then
+        return                              -- update checks are switched off
+    end
+    if type(download_file) ~= "function"
+    or type(snd_raw_url)   ~= "function"
+    or type(do_update)     ~= "function" then
+        return                              -- older plugin file than expected
+    end
+
+    local running = (type(snd_version) == "function") and snd_version()
+                    or tostring(PLUGIN_VERSION or "?")
+
+    download_file(snd_raw_url("VERSION"), function(retval, page, status)
+        if status ~= 200 or type(page) ~= "string" then return end
+        local latest = Trim(page)
+        if latest == "" or latest == running then return end
+
+        InfoNote("SnD: your plugin file is v", running, "; v", latest,
+                 " is available.")
+        InfoNote("SnD: fetching it now -- the plugin will reload itself.")
+        do_update(latest)
+    end)
+end
+
 function snd_debug_cmd(name, line, wildcards)
     local action = ((wildcards and wildcards.action) or ""):lower()
     if action == "clear" then

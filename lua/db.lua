@@ -822,5 +822,13 @@ function init_plugin_after_load()
         cl_check_new_version()
     end
 
+    -- 11. Replace the plugin file if it is older than the published release.
+    --     Deliberately driven from a module: the plugin file cannot update
+    --     itself on v6.0, so this is what spares those installs a manual
+    --     download. Asynchronous and silent unless there is something to do.
+    if type(snd_upgrade_plugin_file_if_stale) == "function" then
+        snd_upgrade_plugin_file_if_stale()
+    end
+
     InfoNote("SnD: Search & Destroy v" .. snd_version() .. " loaded.")
 end

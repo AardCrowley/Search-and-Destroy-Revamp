@@ -174,6 +174,7 @@ local MCVAR_MAP = {
     mcvar_xset_vidblain_level         = { name = "vidblain_level",              global = false },
     mcvar_xset_vidblain_onoff         = { name = "vidblain_onoff",              global = false },
     mcvar_xset_nx_action              = { name = "nx_action",                   global = false },
+    mcvar_auto_reload                 = { name = "auto_reload",                   global = false },
     mcvar_xset_overwrite_con          = { name = "con_overwrite",               global = false },
     mcvar_quick_kill_command          = { name = "quick_kill_command",          global = false },
     mcvar_gqid_joined                 = { name = "gqid_joined",                 global = false },

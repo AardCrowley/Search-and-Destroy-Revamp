@@ -1952,9 +1952,10 @@ function xtest_pathcompare(name, line, wildcards)
     InfoNote("SnD: comparing ", tostring(#dests), " destination(s) from room ",
              tostring(src))
     InfoNote("SnD: ", string.format("%-34s %7s %7s %7s  %s",
-             "target", "mapper", "ours", "diff", "note"))
+             "target", "mapper", "ours", "diff", "via"))
 
     local agree, differ, unreachable = 0, 0, 0
+    local portalled = 0
     local t_mapper_total, t_bfs_total = 0, 0
     local worst, worst_i = 0, nil
 
@@ -1967,7 +1968,19 @@ function xtest_pathcompare(name, line, wildcards)
         local bh = snd_bfs_hops(src, dst)
         t_bfs_total = t_bfs_total + (os.clock() - t1)
 
-        local note = ""
+        -- Whether our answer leans on a portal is the thing worth seeing: a
+        -- portal destination is seeded at depth 1 from anywhere, so any target
+        -- nearer a portal landing than to the player scores the same from
+        -- every room on the map. That is why these counts do not change when
+        -- you walk somewhere else.
+        local via = "walk"
+        local bp  = (type(snd_bfs_path) == "function") and snd_bfs_path(src, dst) or nil
+        if bp and bp[1] and tostring(bp[1].via):find("portal", 1, true) then
+            via = "PORTAL"
+            portalled = portalled + 1
+        end
+
+        local note = via
         local diff = ""
         if mh and bh then
             local delta = bh - mh
@@ -1977,7 +1990,7 @@ function xtest_pathcompare(name, line, wildcards)
             else
                 differ = differ + 1
                 if math.abs(delta) > worst then worst, worst_i = math.abs(delta), i end
-                note = (delta < 0) and "ours is shorter" or "ours is longer"
+                note = via .. ((delta < 0) and " / ours shorter" or " / ours longer")
             end
         else
             unreachable = unreachable + 1
@@ -1992,6 +2005,13 @@ function xtest_pathcompare(name, line, wildcards)
     InfoNote("SnD: ", string.rep("-", 60))
     InfoNote("SnD: agree ", tostring(agree), ", differ ", tostring(differ),
              ", no route ", tostring(unreachable))
+    if portalled > 0 then
+        InfoNote("SnD: ", tostring(portalled), " of ", tostring(#dests),
+                 " of our answers start with a portal, which our search allows",
+                 " from anywhere -- those counts do not depend on where you are")
+        InfoNote("SnD: standing. Run this again from a noportal room: ours",
+                 " should not change, the mapper's should.")
+    end
     InfoNote("SnD: ", string.format("mapper %.3fs total (%.3fs each), " ..
              "ours %.3fs total (%.3fs each)",
              t_mapper_total, t_mapper_total / #dests,
@@ -2403,6 +2423,54 @@ function toggle_automatic_update_checking()
     snd_set_setting("automatic_update_checks", automatic_update_checks, true)
 
     InfoNote("\nSearch&Destroy automatic update checking is now ", string.upper(automatic_update_checks))
+end
+
+-- Reload after a module update, but only when nothing is in mid-flight.
+--
+-- Replacing the plugin file already reloads unasked, so the two update paths
+-- were inconsistent. The reason to hesitate here is that a reload empties the
+-- in-memory campaign state -- main_target_list, current_target, the navigation
+-- queue -- none of which is rebuilt on load. Nothing is destroyed (settings,
+-- marks, keywords and history are in the database) but mid-campaign it costs
+-- a 'cp info' to get the list back, and mid-walk it leaves the player standing
+-- still.
+--
+-- So: reload when there is nothing to interrupt, and otherwise say so and let
+-- them choose the moment.
+local function _snd_busy_reason()
+    if type(has_activity_target) == "function" and has_activity_target() then
+        return "you are working a campaign or quest target"
+    end
+    if type(main_target_list) == "table" and #main_target_list > 0 then
+        return "a target list is loaded"
+    end
+    if type(gotoList) == "table" and #gotoList > 0 then
+        return "a route is in progress"
+    end
+    if type(is_character_ready) == "function" and not is_character_ready() then
+        return "you are " .. (type(character_state_string) == "function"
+                              and character_state_string() or "busy")
+    end
+    return nil
+end
+
+function _snd_reload_or_prompt()
+    if type(snd_get_setting) == "function"
+    and snd_get_setting("auto_reload", "on") ~= "on" then
+        ColourNote("silver", "", "SnD: Type 'snd reload' to apply the updates.")
+        return
+    end
+
+    local busy = _snd_busy_reason()
+    if busy then
+        ColourNote("silver", "",
+            "SnD: updates are ready, but " .. busy ..
+            " -- type 'snd reload' when you are done.")
+        return
+    end
+
+    ColourNote("silver", "", "SnD: reloading to apply the updates...")
+    sndReload()
 end
 
 function sndReload()
@@ -4209,8 +4277,7 @@ function _snd_smart_update(force, ref)
 
                     local total_ok = #plain + #merged + #sidecars
                     if total_ok > 0 then
-                        ColourNote("silver", "",
-                            "SnD: Type 'snd reload' to apply the updates.")
+                        _snd_reload_or_prompt()
                     end
 
                     -- Modules are only half the plugin. The version banner
@@ -4370,23 +4437,23 @@ local _snd_subroutines = {
     "xrt_noarg", "xrun_to_alias", "xset_area_delete", "xset_area_edit_difficulty",
     "xset_area_edit_lock", "xset_area_edit_max", "xset_area_edit_min", "xset_area_edit_name",
     "xset_area_edit_noquest", "xset_area_edit_start", "xset_area_edit_vidblain", "xset_area_list",
-    "xset_area_list_unset", "xset_autonav", "xset_con_overwrite", "xset_debug",
-    "xset_express", "xset_gqalias", "xset_import_area_vars", "xset_index_areas",
-    "xset_level_area", "xset_level_area_reset", "xset_level_buffer", "xset_mark_current",
-    "xset_mark_set", "xset_marks_delete", "xset_marks_edit", "xset_marks_list",
-    "xset_marks_search", "xset_maze", "xset_maze_delete", "xset_maze_list",
-    "xset_mob_clearflags", "xset_mob_difficulty", "xset_mob_express", "xset_mob_levelok",
-    "xset_mob_noaction", "xset_mob_nohunt", "xset_mob_noscan", "xset_mob_nowhere",
-    "xset_mob_priority", "xset_mob_tags", "xset_mob_unpriority", "xset_noexp_tnl",
-    "xset_nx", "xset_pathing", "xset_pathing_express", "xset_quick_kill_command",
-    "xset_rlink", "xset_silent_mode", "xset_snd_dev_update", "xset_snd_force_update",
-    "xset_snd_update", "xset_sound", "xset_table_notes", "xset_table_width",
-    "xset_to_mark", "xset_vidblain", "xset_vidblain_setlevel", "xtest_areadata",
-    "xtest_debug", "xtest_debug_gquest", "xtest_findpath", "xtest_gq_end",
-    "xtest_gq_join", "xtest_gq_kill", "xtest_gq_lose", "xtest_gq_quit",
-    "xtest_gq_start", "xtest_gq_waiting", "xtest_gq_win", "xtest_loadroom",
-    "xtest_mcvars", "xtest_pathcompare", "xtest_popmsg", "xtest_print_target",
-    "xtest_roomhist", "xtest_set_qt", "xtest_xcp",
+    "xset_area_list_unset", "xset_autonav", "xset_autoreload", "xset_con_overwrite",
+    "xset_debug", "xset_express", "xset_gqalias", "xset_import_area_vars",
+    "xset_index_areas", "xset_level_area", "xset_level_area_reset", "xset_level_buffer",
+    "xset_mark_current", "xset_mark_set", "xset_marks_delete", "xset_marks_edit",
+    "xset_marks_list", "xset_marks_search", "xset_maze", "xset_maze_delete",
+    "xset_maze_list", "xset_mob_clearflags", "xset_mob_difficulty", "xset_mob_express",
+    "xset_mob_levelok", "xset_mob_noaction", "xset_mob_nohunt", "xset_mob_noscan",
+    "xset_mob_nowhere", "xset_mob_priority", "xset_mob_tags", "xset_mob_unpriority",
+    "xset_noexp_tnl", "xset_nx", "xset_pathing", "xset_pathing_express",
+    "xset_quick_kill_command", "xset_rlink", "xset_silent_mode", "xset_snd_dev_update",
+    "xset_snd_force_update", "xset_snd_update", "xset_sound", "xset_table_notes",
+    "xset_table_width", "xset_to_mark", "xset_vidblain", "xset_vidblain_setlevel",
+    "xtest_areadata", "xtest_debug", "xtest_debug_gquest", "xtest_findpath",
+    "xtest_gq_end", "xtest_gq_join", "xtest_gq_kill", "xtest_gq_lose",
+    "xtest_gq_quit", "xtest_gq_start", "xtest_gq_waiting", "xtest_gq_win",
+    "xtest_loadroom", "xtest_mcvars", "xtest_pathcompare", "xtest_popmsg",
+    "xtest_print_target", "xtest_roomhist", "xtest_set_qt", "xtest_xcp",
 }
 
 local _snd_stub_notified = false
@@ -4766,6 +4833,7 @@ end
 
 	<alias match="^xset express ?(?<state>on|off)? ?(?<min_kill>\d+)?$" script="xset_express" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12" > </alias>
 
+        <alias match="^xset autoreload ?(?<state>on|off)?$" script="xset_autoreload" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^xset autonav ?(?<state>on|off)?$" script="xset_autonav" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xset maze$" script="xset_maze" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>

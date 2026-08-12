@@ -943,6 +943,26 @@ local TOPICS = {
     },
 
     {
+        key      = "xset autoreload",
+        aliases  = { "autoreload" },
+        category = "System",
+        syntax   = {
+            "xset autoreload            (show the current setting)",
+            "xset autoreload on|off     (turn it on or off)",
+        },
+        summary  = "Reload automatically after an update, when it is safe to.",
+        sections = {
+            {
+                text    = "After 'snd update' fetches new modules they do not take effect until the plugin reloads. With this on -- the default -- it reloads for you, but only when nothing is in progress: no campaign or quest target loaded, no route running, and you are not in combat. Otherwise it says so and leaves the moment to you.",
+            },
+            {
+                text    = "A reload empties the in-memory campaign state: the target list, the current target and the route. Nothing is lost -- settings, marks, keywords and history live in the database -- but you would need 'cp info' again to rebuild the list, which is why it waits. Turn it off to always be told rather than reloaded.",
+            },
+        },
+        see_also = { "snd reload", "snd update", "snd version" },
+    },
+
+    {
         key      = "snd reload",
         category = "System",
         syntax   = { "snd reload" },
