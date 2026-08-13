@@ -288,6 +288,16 @@ function debug_log_open()
             "\n=== S&D Debug Log  v%s  char:%s  %s ===\n",
             ver, chr, ts
         ))
+        -- Silent when there is nothing set: the header of a log opened before
+        -- the database is ready should not read like a failure, and a session
+        -- with no settings changed has nothing here worth a heading.
+        local settings, n_settings = debug_settings_lines()
+        if n_settings > 0 then
+            fh:write(string.format(
+                "----- settings changed from default (%d) -----\n", n_settings))
+            for _, l in ipairs(settings) do fh:write(l .. "\n") end
+            fh:write("-----\n")
+        end
         fh:flush()
     end)
 end
@@ -345,6 +355,82 @@ function debug_log_rotate_if_large()
     return true
 end
 
+-- ─── SETTINGS SNAPSHOT ───────────────────────────────────────────────────────
+
+-- Colors and fonts are the bulk of the rows and change no behaviour, so they
+-- would only bury the settings that do.
+local function setting_is_cosmetic(name)
+    return name:find("^color_") ~= nil or name:find("font") ~= nil
+end
+
+-- The settings this character is actually running under.
+--
+-- Returns the lines to write, and how many settings they describe -- which is
+-- not #lines, since a failure or an untouched install has something to say and
+-- no settings to say it about.
+--
+-- Only what has been written to the settings table -- a setting still at its
+-- default reads the same for everyone, so it can never be the reason two
+-- people see different behaviour, and listing all of them would hide the few
+-- that can. Per-character rows shadow global ones, so where both exist the
+-- effective value is shown with the global it is overriding.
+function debug_settings_lines()
+    local lines = {}
+
+    if type(db_open) ~= "function" then
+        return { "  (settings unavailable -- the database module is not loaded)" }, 0
+    end
+
+    local globals, chars, names = {}, {}, {}
+    local ok = pcall(function()
+        local db = db_open()
+        if not db then return end
+        local char_id = (type(get_current_char_id) == "function")
+            and get_current_char_id() or nil
+        for row in db:nrows(
+            "SELECT name, value, char_id FROM settings " ..
+            "WHERE char_id IS NULL OR char_id=" .. tostring(char_id or -1)
+        ) do
+            local n = tostring(row.name or "")
+            if n ~= "" and not setting_is_cosmetic(n) then
+                if row.char_id == nil then
+                    globals[n] = tostring(row.value)
+                else
+                    chars[n] = tostring(row.value)
+                end
+                names[n] = true
+            end
+        end
+        db_close(db)
+    end)
+
+    if not ok then
+        return { "  (settings could not be read)" }, 0
+    end
+
+    local sorted = {}
+    for n in pairs(names) do sorted[#sorted + 1] = n end
+    table.sort(sorted)
+
+    for _, n in ipairs(sorted) do
+        local per_char = chars[n] ~= nil
+        local value    = per_char and chars[n] or globals[n]
+        local scope    = per_char and "char" or "global"
+        -- A per-character value hiding a different global one is worth seeing:
+        -- it is how the same command reports two answers on two characters.
+        if per_char and globals[n] ~= nil and globals[n] ~= value then
+            scope = scope .. ", global=" .. globals[n]
+        end
+        lines[#lines + 1] = string.format("  %-32s %-16s (%s)", n, value, scope)
+    end
+
+    local count = #lines
+    if count == 0 then
+        lines[1] = "  (nothing set -- every setting is at its default)"
+    end
+    return lines, count
+end
+
 -- Write the trace buffer to the log.
 --
 -- reason: what prompted it, recorded at the top so the file explains itself.
@@ -365,6 +451,15 @@ function trace_dump(reason)
             os.date("%Y-%m-%d %H:%M:%S"),
             (type(snd_version) == "function" and snd_version()) or "?",
             kept, total))
+        -- Before the notes rather than after: "which settings was this run
+        -- under" is the first question asked of a report that cannot be
+        -- reproduced, and the notes below can be thousands of lines.
+        local settings, n_settings = debug_settings_lines()
+        fh:write(string.format(
+            "----- settings changed from default (%d) -----\n", n_settings))
+        for _, l in ipairs(settings) do fh:write(l .. "\n") end
+        fh:write("----- notes -----\n")
+
         for _, e in ipairs(entries) do
             fh:write(string.format("[%s] [%-5s] %s\n", e.t, e.lvl, e.msg))
         end
@@ -471,6 +566,14 @@ function snd_debug_cmd(name, line, wildcards)
     local action = ((wildcards and wildcards.action) or ""):lower()
     if action == "clear" then
         debug_log_clear()
+    elseif action == "settings" then
+        -- The same block the dump writes, on screen, for pasting into a report
+        -- when the log file is more than the question deserves.
+        local lines, n = debug_settings_lines()
+        InfoNote("SnD: settings changed from default (" .. n .. "):")
+        for _, l in ipairs(lines) do InfoNote(l) end
+        InfoNote("SnD: anything not listed is at its default. Colors and " ..
+                 "fonts are left out.")
     elseif action == "dump" then
         -- For when behaviour is wrong but nothing errored, which is most
         -- reports. Notes are recorded continuously but never written during
@@ -494,6 +597,8 @@ function snd_debug_cmd(name, line, wildcards)
                  total .. " note(s), recorded whether or not debug mode is on.")
         InfoNote("SnD: 'snd debug dump' writes them out; it happens by itself " ..
                  "on an error.")
+        InfoNote("SnD: 'snd debug settings' lists what you have changed from " ..
+                 "the defaults — the dump records it too.")
         if cur ~= "on" then
             InfoNote("SnD: Use 'xset debug on' to also show them as they happen.")
         end

@@ -75,7 +75,17 @@ end
 
 -- ─── POST-ARRIVAL ACTION ─────────────────────────────────────────────────────
 
-function action_on_destination_arrived()
+-- What 'xcp mode' asked for, queued by xcp_goto_target and run once on
+-- arrival.  Only xcp ever sets it, so plain 'nx' and 'go' are unaffected.
+local _xcp_arrival_fn = nil
+
+-- Queue (fn) or clear (nil) the arrival action for the navigation now starting.
+function set_xcp_arrival_action(fn)
+    _xcp_arrival_fn = (type(fn) == "function") and fn or nil
+end
+
+-- The 'xset nx' action: what to do on arriving anywhere at all.
+local function nx_arrival_action()
     local action = snd_get_setting("nx_action", "qs")
     if action == "smartscan" then
         if type(smart_scan) == "function" then smart_scan() end
@@ -95,6 +105,16 @@ function action_on_destination_arrived()
     elseif action == "qs" then
         if type(quick_scan) == "function" then quick_scan() end
     end
+end
+
+function action_on_destination_arrived()
+    nx_arrival_action()
+
+    -- Then whatever 'xcp mode' asks for.  Taken rather than read, so one
+    -- navigation fires it once however the arrival is detected.
+    local fn = _xcp_arrival_fn
+    _xcp_arrival_fn = nil
+    if fn then fn() end
 end
 
 function set_going_to_room(room_id)
@@ -488,6 +508,22 @@ end
 xcp_retry_stat    = 0
 xcp_index_attempt = 0
 
+-- What 'xcp mode' asks for once we get where we are going: hunt the mob down
+-- (ht), ask the game where it is (qw), or nothing (off).  Returns a function
+-- to run on arrival, or nil.
+--
+-- 'ht' is campaign-only.  Hunt does not answer for gquest mobs, so a gquest
+-- falls back to 'where' -- which is what the area route has always done.
+local function xcp_arrival_action(t)
+    local action = snd_get_setting("xcp_action_mode", "qw")
+    if action == "ht" and current_activity == "cp" then
+        return function() do_hunt_trick(1, t.kw) end
+    elseif action == "qw" or (action == "ht" and current_activity ~= "cp") then
+        return function() qw_exact() end
+    end
+    return nil
+end
+
 -- Navigate to target at index in main_target_list.
 function xcp_goto_target(index)
     local t = main_target_list[index]
@@ -531,6 +567,7 @@ function xcp_goto_target(index)
                     "SnD: Resumed [%s] — room %d of %d.",
                     sn.mob_key, gotoIndex, #gotoList
                 ))
+                set_xcp_arrival_action(xcp_arrival_action(t))
                 set_going_to_room(tonumber(dest))
                 goto_room_id(tostring(dest), t.arid)
             elseif dest then
@@ -538,6 +575,8 @@ function xcp_goto_target(index)
                     "SnD: Resumed [%s] — routing to area %s.",
                     sn.mob_key, tostring(dest)
                 ))
+                local fn = xcp_arrival_action(t)
+                if fn then execute_in_area(tostring(dest), fn) end
                 xrun_to(dest, true)
             end
             if type(xg_draw_window) == "function" then xg_draw_window() end
@@ -563,9 +602,25 @@ function xcp_goto_target(index)
         return
     end
 
-    local action = snd_get_setting("xcp_action_mode", "qw")
+    local express = is_express_target(t)
+    local arrival = xcp_arrival_action(t)
 
-    if is_express_target(t) then
+    -- Nothing is queued yet for this navigation, and a previous one may have
+    -- been abandoned part-way.
+    set_xcp_arrival_action(nil)
+
+    -- Which route this target takes decides almost everything that follows,
+    -- and none of it was recoverable from a report afterwards.  One line, so
+    -- that "it went somewhere else" can be read rather than reconstructed.
+    DebugNote(string.format(
+        "SnD: xcp #%s '%s': link=%s arid=%s roomid=%s room='%s'%s%s, mode=%s",
+        tostring(index), tostring(t.mob), tostring(t.link_type),
+        tostring(t.arid), tostring(t.roomid), tostring(t.roomName or ""),
+        express and ", express" or "",
+        t.pinned_room and ", pinned" or "",
+        snd_get_setting("xcp_action_mode", "qw")))
+
+    if express then
         -- Express: go directly to the highest-kill room.
         -- Exception: if the target's area is a maze area, the specific roomid
         -- is inside the maze and unreachable by normal navigation.  Fall back to
@@ -590,10 +645,16 @@ function xcp_goto_target(index)
         if use_area_fallback then
             InfoNote("SnD: Express target is in a maze area — routing to area entrance instead of specific room.")
             gotoList[0] = t.arid
+            if arrival then execute_in_area(t.arid, arrival) end
             xrun_to(t.arid, true)
             DebugNote("SnD: xcp express target → area " .. tostring(t.arid))
         else
             -- Navigate immediately to the express (highest-kill) room.
+            -- The express room is a guess from history: the mob was killed
+            -- there before, not necessarily today.  So queue the 'xcp mode'
+            -- action for arrival -- without it, landing in the wrong room
+            -- ends the attempt with nothing looking for the mob.
+            set_xcp_arrival_action(arrival)
             set_going_to_room(t.roomid)
             goto_room_id(tostring(t.roomid), t.arid)
             -- Said out loud, not just to the debug log. An express target
@@ -640,26 +701,32 @@ function xcp_goto_target(index)
         end
 
     elseif t.link_type == "area" then
-        -- Area CP: go to area, then hunt/qw on arrival.
-        if action == "ht" and current_activity == "cp" then
-            execute_in_area(t.arid, function()
-                do_hunt_trick(1, t.kw)
-            end)
-        elseif action == "qw" or (action == "ht" and current_activity ~= "cp") then
-            execute_in_area(t.arid, function()
-                qw_exact()
-            end)
-        end
+        -- Area CP: go to area, then hunt/qw on arrival.  There is no room to
+        -- arrive at, so this one waits on the zone instead.
+        if arrival then execute_in_area(t.arid, arrival) end
         if gmcp("room.info.zone") ~= t.arid then
             xrun_to(t.arid, true)
         end
 
     else
-        -- Room CP: find all matching rooms, display list, and navigate to the best one.
+        -- Room CP: find all matching rooms, display list, and navigate to the
+        -- best one.  The room the campaign named is where the mob was, not
+        -- where it necessarily is, so the 'xcp mode' action is queued here too.
         search_rooms_exact(t.roomName, t.arid, t.mob, true)
-        -- gotoList[1] is the highest-confidence room after search_rooms_results sorts by sightings.
-        if gotoList[1] then
-            local rid = tostring(gotoList[1])
+
+        -- A pinned room ('xset mob priority') is a deliberate answer to which
+        -- of the same-named rooms this mob is in, so it outranks the sighting
+        -- ranking.  Otherwise gotoList[1] is the best room after
+        -- search_rooms_results has sorted by sightings.
+        local rid = nil
+        if t.pinned_room and tonumber(t.roomid) then
+            rid = tostring(t.roomid)
+        elseif gotoList[1] then
+            rid = tostring(gotoList[1])
+        end
+
+        if rid then
+            set_xcp_arrival_action(arrival)
             set_going_to_room(tonumber(rid))
             goto_room_id(rid, t.arid)
             next_room = rid
@@ -733,6 +800,9 @@ end
 function xcp_clear_target(redraw)
     if type(clear_target) == "function" then clear_target() end
     _saved_nav = nil
+    -- There is no target left to hunt for, so a queued arrival action would
+    -- fire against a stale one the next time any navigation finishes.
+    set_xcp_arrival_action(nil)
     gotoArea  = -1
     gotoIndex = 0
     gotoList  = {}

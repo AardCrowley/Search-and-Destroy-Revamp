@@ -536,7 +536,7 @@ local TOPICS = {
             },
             {
                 heading = "ht",
-                text    = "Automatically start a hunt trick (see 'xhelp ht').",
+                text    = "Automatically start a hunt trick (see 'xhelp ht').  Hunt does not answer for gquest mobs, so on a gquest this falls back to 'where'.",
             },
             {
                 heading = "qw",
@@ -544,7 +544,10 @@ local TOPICS = {
             },
             {
                 heading = "off",
-                text    = "Do nothing — just arrive at the start room of the area.",
+                text    = "Do nothing — just arrive, and find the mob yourself.",
+            },
+            {
+                text = "This applies however 'xcp' got you there: an express jump to a room you have killed the mob in, the room the campaign named, or the entrance of an area.  The first two aim at one room, which is where the mob was rather than where it necessarily is, so this is what looks for it when it has moved.",
             },
         },
         see_also = { "xcp", "ht", "qw" },
@@ -1360,6 +1363,8 @@ local TOPICS = {
             "xset debug            (show whether logging is on, and the log path)",
             "xset debug on|off     (start or stop logging)",
             "snd debug clear       (empty the log file)",
+            "snd debug dump        (write the recorded notes to the log now)",
+            "snd debug settings    (list what you have changed from the defaults)",
         },
         summary  = "Log S&D's internal activity to a file for bug reports.",
         sections = {
@@ -1368,6 +1373,9 @@ local TOPICS = {
             },
             {
                 text    = "Run it bare to see whether logging is currently on and where the file lives. 'snd debug clear' empties the log, which is worth doing right before reproducing a problem so the file contains only the relevant run. Leave debug off for normal play -- the log grows steadily and is never truncated on its own.",
+            },
+            {
+                text    = "'snd debug dump' writes out the notes S&D records continuously whether or not debug mode is on, so a run that misbehaved once can still be reported. Every dump begins with the settings you have changed from their defaults -- the usual reason two people running the same version see different behavior. 'snd debug settings' shows that list on its own. Colors and fonts are left out of both.",
             },
         },
         see_also = { "snd reload", "snd stats" },

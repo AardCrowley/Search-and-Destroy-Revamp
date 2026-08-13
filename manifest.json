@@ -1,5 +1,5 @@
 {
-  "version": "6.0.2",
+  "version": "6.0.3-dev",
   "files": [
     {
       "file": "constants.lua",
@@ -8,8 +8,8 @@
     },
     {
       "file": "util.lua",
-      "hash": "a74abe78",
-      "size": 21546
+      "hash": "109eecf8",
+      "size": 26178
     },
     {
       "file": "db.lua",
@@ -58,8 +58,8 @@
     },
     {
       "file": "navigation.lua",
-      "hash": "1ff3ef8c",
-      "size": 54713
+      "hash": "8369cd80",
+      "size": 57954
     },
     {
       "file": "hunting.lua",
@@ -88,8 +88,8 @@
     },
     {
       "file": "help.lua",
-      "hash": "7d86b4fa",
-      "size": 86863
+      "hash": "a11209f0",
+      "size": 87905
     },
     {
       "file": "changelog.lua",

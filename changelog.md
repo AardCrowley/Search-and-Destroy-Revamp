@@ -1,3 +1,58 @@
+# v6.0.3-dev
+
+**A development build.**  Nothing here is in a public release yet.  Run
+`snd version` to see whether you are on one of these.
+
+## Bug Fixes
+
+- **Fixed: `xcp mode` did nothing unless the target was an area target.**
+  With `xcp mode ht` set, nothing hunted after an `xcp`.  `xcp` takes one of
+  three routes depending on the target: straight to a remembered kill room
+  (express), to the room the campaign named, or to the area entrance.  Only
+  the third ever ran the hunt or the where — and that is the route that needs
+  it least.  The other two aim at one specific room, and a room is a guess:
+  the mob was killed there once, or the campaign named where it was standing
+  when the list was drawn.  When the guess is wrong you arrived, the arrival
+  scan reported nothing, and the attempt ended there with nothing looking for
+  the mob.  All three routes now honor the setting, including when resuming a
+  target after a detour.
+
+  This is what was behind an express jump landing two rooms from a white
+  dragon and stopping: the room was right about where the dragon had been,
+  and nothing asked where it was now.
+
+  Reported by **Selitos**.
+
+- **Fixed: a pinned room was ignored for room campaigns.**
+  `xset mob priority` records "this mob is in *this* room", to settle which of
+  several identically-named rooms to walk to.  For a room campaign the target
+  was routed by matching the campaign's room name and picking the best-attested
+  match, which never consulted the pin — so setting one had no effect at all
+  there.  A pin is a deliberate answer and now outranks the ranking; the other
+  same-named rooms are still listed for `nx` to cycle through.
+
+- **`xcp` now records which route it took.**
+  One debug line naming the branch, area, room ID, room name, whether the
+  target is express or pinned, and the current mode.  Walking somewhere
+  unexpected previously left nothing behind to say why, and the answer had to
+  be reconstructed from the room names in the output.
+
+## New
+
+- **A debug dump now begins with your settings.**
+  Most reports come down to "it does this for me and not for you", and the
+  usual answer is a setting one of you changed — but the dump recorded what
+  happened without ever recording what it was configured to do, so working
+  that out took a round of asking.  `snd debug dump` and the header of a debug
+  log now list them, and `snd debug settings` shows the same list on screen if
+  you would rather paste a dozen lines than send a file.
+
+  Only what you have actually set: a setting still at its default reads the
+  same for everyone, so it cannot be the difference, and listing all of them
+  would bury the few that can.  Where a per-character value overrides a global
+  one both are shown — that is how the same command answers differently on two
+  characters.  Colors and fonts are left out.
+
 # v6.0.2
 
 ## Bug Fixes
