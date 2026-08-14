@@ -361,6 +361,17 @@ function quick_kill(name, line, wildcards)
                  "Set one with 'xset kw'.\n")
         return
     end
+    -- Quoted because gmkw returns up to two words, and a combat command takes
+    -- only the first one: 'kill bleeding warrior' attacks whatever 'bleeding'
+    -- matches. Quoting single-word keywords too is harmless and keeps this to
+    -- one rule.
+    --
+    -- This is the only send that needs it. 'hunt', 'scan <kw>' and 'where'
+    -- take the rest of the line, so a two-word keyword already reaches them
+    -- whole -- 'where 3.garden eel' comes back as "There is no 3.garden eel
+    -- around here.", the argument echoed intact. Quoting those would send the
+    -- quotes as part of the name. (If a numbered target is ever wanted here,
+    -- the game's form is 2.'bleeding warrior', index outside the quotes.)
     local targ_name = " '" .. kw .. "'"
     local cmd_str   = snd_get_setting("quick_kill_command", "k")
     for cmd in cmd_str:gmatch("[^;]+") do

@@ -1,5 +1,5 @@
 {
-  "version": "6.0.3-dev",
+  "version": "6.0.3",
   "files": [
     {
       "file": "constants.lua",
@@ -63,8 +63,8 @@
     },
     {
       "file": "hunting.lua",
-      "hash": "88994126",
-      "size": 14784
+      "hash": "9cb57d80",
+      "size": 15507
     },
     {
       "file": "scanning.lua",
