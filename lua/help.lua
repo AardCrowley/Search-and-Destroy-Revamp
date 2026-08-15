@@ -650,6 +650,7 @@ local TOPICS = {
             "xset kw <keyword>   (set keyword while on target)",
             "xset kw             (interactive keyword dialog)",
             "xset kw list [<area>]  (show the keywords you have stored)",
+            "xset kw fix         (re-check stored keywords for a lost - or ')",
         },
         summary  = "Override a mob's target keyword when the default does not work.",
         sections = {
@@ -663,6 +664,10 @@ local TOPICS = {
             {
                 heading = "list",
                 text    = "'xset kw list' shows every keyword override you have, grouped by area, with 'xset kw list <area>' for one of them. Keywords set in an earlier version of S&D are carried over automatically when the database upgrades itself on first run -- they are not part of 'xset import', which covers area level ranges, start rooms and marks only. If you brought keywords forward and this list is empty, that is worth reporting.",
+            },
+            {
+                heading = "fix",
+                text    = "Mob names with a hyphen or apostrophe ('half-griffon', 'y'atora') keep that character in the keyword -- Aardwolf treats it as literal, so dropping it produces a keyword the game will not match. Versions before this one sometimes dropped it anyway. This check runs once automatically after installing this version and corrects any it finds; 'xset kw fix' repeats the check by hand for anything stored since.",
             },
             {
                 heading = "Who a keyword applies to",

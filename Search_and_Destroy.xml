@@ -4817,7 +4817,7 @@ local _snd_subroutines = {
     "xset_area_list_unset", "xset_autonav", "xset_autoreload", "xset_cols",
     "xset_con_overwrite",
     "xset_debug", "xset_express", "xset_gqalias", "xset_import_area_vars", "xset_kw",
-    "xset_kw_list",
+    "xset_kw_list", "xset_kw_fix",
     "xset_index_areas", "xset_level_area", "xset_level_area_reset", "xset_level_buffer",
     "xset_mark_current", "xset_mark_set", "xset_marks_delete", "xset_marks_edit",
     "xset_marks_list", "xset_marks_search", "xset_maze", "xset_maze_delete",
@@ -5189,6 +5189,8 @@ end
         <alias match="^xset kw$" script="set_mob_keyword" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xset kw list(?: (?<area>\S+))?$" script="xset_kw_list" enabled="y" regexp="y" sequence="99" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^xset kw fix$" script="xset_kw_fix" enabled="y" regexp="y" sequence="99" ignore_case="y" send_to="12"></alias>
         <alias match="^xset kw (?<keyword>.+)$" script="xset_kw" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xset marks$" script="xset_marks_list" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>

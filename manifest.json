@@ -13,8 +13,8 @@
     },
     {
       "file": "db.lua",
-      "hash": "7e51eb70",
-      "size": 37277
+      "hash": "62c196c2",
+      "size": 38337
     },
     {
       "file": "settings.lua",
@@ -38,8 +38,8 @@
     },
     {
       "file": "keywords.lua",
-      "hash": "d64efa00",
-      "size": 19108
+      "hash": "f9785798",
+      "size": 23598
     },
     {
       "file": "targets.lua",
@@ -88,8 +88,8 @@
     },
     {
       "file": "help.lua",
-      "hash": "4e5e5072",
-      "size": 88910
+      "hash": "feaf33ea",
+      "size": 89488
     },
     {
       "file": "changelog.lua",

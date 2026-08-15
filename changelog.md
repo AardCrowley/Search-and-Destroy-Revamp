@@ -5,6 +5,23 @@
 
 ## Bug Fixes
 
+- **Fixed: mob names with a hyphen or apostrophe could get a keyword that
+  does not include it.**  `half-griffon` could end up with a stored keyword
+  of just `griffon`, `y'atora` could lose the apostrophe — and Aardwolf
+  treats both characters as literal, so the shortened keyword simply does
+  not match.  The keyword guesser itself was already fixed for this a while
+  back, but a stored keyword always wins over a fresh guess, so every mob a
+  player had already met kept the old, broken keyword regardless.
+
+  On first load of this version, any stored keyword that looks like a fossil
+  of the old bug — the mob's name has a hyphen or apostrophe, the stored
+  keyword doesn't, and generating it fresh today would produce one that does
+  — is corrected automatically, and reported.  Deliberate overrides that
+  genuinely omit the character are left alone.  `xset kw fix` repeats the
+  same check by hand, for anything set since.
+
+  Reported by **Arcylix**.
+
 - **`snd update` reloaded twice.**  Modules and the plugin file are fetched by
   two independent paths, and both reloaded: the module path reloaded as soon as
   the last module landed, and replacing the plugin file reloads on its own.  A

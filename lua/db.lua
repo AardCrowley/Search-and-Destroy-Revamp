@@ -808,6 +808,28 @@ function init_plugin_after_load()
         return
     end
 
+    -- 1b. One-time repair of keywords fossilised by the pre-9472d6e bug that
+    --     dropped hyphens and apostrophes from mob names ('half-griffon' ->
+    --     'griffon'). Gated so it only ever does its scan once per install;
+    --     'xset kw fix' repeats it on demand. fix_hyphenated_keywords() is
+    --     defined in keywords.lua.
+    if type(snd_get_setting) == "function"
+    and snd_get_setting("kw_hyphen_fix_applied", "") == ""
+    and type(fix_hyphenated_keywords) == "function" then
+        local ok, changed = pcall(fix_hyphenated_keywords)
+        if ok then
+            if #changed > 0 then
+                InfoNote(string.format(
+                    "SnD: corrected %d stored keyword(s) that had lost a " ..
+                    "hyphen or apostrophe from the mob's name. Run 'xset kw " ..
+                    "list' to see them.", #changed))
+            end
+            snd_set_setting("kw_hyphen_fix_applied", "1", true)
+        else
+            ErrorNote("SnD: keyword repair pass failed: " .. tostring(changed))
+        end
+    end
+
     -- 2. Resolve character identity now that the characters table exists.
     --    init_current_character() is defined in characters.lua.
     init_current_character()

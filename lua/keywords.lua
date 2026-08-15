@@ -128,17 +128,19 @@ local function _gmkw_trunc(word, max_len)
     return string.sub(word, 1, max_len)
 end
 
--- ─── PUBLIC: gmkw ─────────────────────────────────────────────────────────────
+-- ─── PUBLIC: gmkw / gmkw_algorithm ─────────────────────────────────────────────
 -- Guess or look up the keyword(s) for mob name `s` in area `a`.
 --
 -- Resolution order:
---   1. DB lookup  — char-specific row, then global (char_id IS NULL).
+--   1. DB lookup  — char-specific row, then global (char_id IS NULL). (gmkw only)
 --   2. Area filter — area-specific regex transforms (GMKW_AREA_FILTERS).
 --   3. Algorithm  — deterministic selection of the 1-2 most distinctive words.
 --
 -- Algorithm:
 --   a. Detect proper nouns before lowercasing (mid-name capitals = proper).
 --   b. Clean tokens: lowercase, strip trailing punctuation and possessives.
+--      Hyphens and mid-word apostrophes are kept -- Aardwolf treats both as
+--      literal, significant characters in a keyword, the same as any letter.
 --   c. Remove stop-words (prepositions, articles, conjunctions).
 --   d. Apply area filter if present.
 --   e. Re-tokenise the filtered string (area filter may have changed the word set).
@@ -149,17 +151,17 @@ end
 --
 -- This is deterministic: the same input always produces the same output.
 -- The DB exception system handles mobs where the algorithm produces wrong results.
+--
+-- gmkw_algorithm() is steps 2-3 on their own, with no DB lookup -- see its
+-- own comment below for why that has to be a separate entry point.
 
-function gmkw(s, a)
+-- The guesser itself, with no DB lookup. Split out from gmkw() so a repair
+-- pass can ask "what would the algorithm produce for this name today" without
+-- getting a stored row handed back instead -- which is exactly what gmkw()
+-- is for the rest of the plugin, and exactly what a repair pass must not get.
+function gmkw_algorithm(s, zone)
     if not s or s == "" then return "" end
-    local zone = a or gmcp("room.info.zone") or ""
-
-    -- 1. DB lookup first.
-    local stored = db_get_keyword(zone, s)
-    if stored then
-        DebugNote("SnD: gmkw: stored override for '" .. s .. "': " .. stored)
-        return stored
-    end
+    zone = zone or ""
 
     -- 2. Detect proper nouns BEFORE lowercasing.
     --    A token is a "proper noun" when it:
@@ -263,6 +265,105 @@ function gmkw(s, a)
     end
 
     return table.concat(parts, " ")
+end
+
+-- The entry point everything but the repair pass below calls: a DB override,
+-- if one is stored, otherwise the algorithm above.
+function gmkw(s, a)
+    if not s or s == "" then return "" end
+    local zone = a or gmcp("room.info.zone") or ""
+
+    local stored = db_get_keyword(zone, s)
+    if stored then
+        DebugNote("SnD: gmkw: stored override for '" .. s .. "': " .. stored)
+        return stored
+    end
+
+    return gmkw_algorithm(s, zone)
+end
+
+-- ─── ONE-TIME REPAIR: keywords fossilised by the hyphen/apostrophe bug ────────
+--
+-- Before 9472d6e, gmkw() replaced '-' with a space before tokenising, so a
+-- hyphenated mob name lost the hyphen -- 'half-griffon' became 'half griffon',
+-- or worse, just 'griffon' once the duller half of the pair lost the scoring
+-- tie-break and only one word was kept. That fix corrected the algorithm, but
+-- not the fossils: a stored row always wins over a fresh guess, so every mob
+-- a player had already met before the fix keeps returning the broken keyword
+-- forever, regardless of what the algorithm would say today.
+--
+-- Recomputing every row unconditionally would also stomp deliberate
+-- overrides -- the whole reason mob_keywords exists is for mobs where the
+-- algorithm is wrong, on purpose, forever. So this only touches a row when
+-- all three are true:
+--   - the mob's name carries a hyphen or an apostrophe,
+--   - the stored keyword does not carry one, and
+--   - the algorithm, run fresh today, would produce one that does.
+-- That combination is what the old bug's output looks like. A stored keyword
+-- that already has the punctuation is left alone (correct, or a deliberate
+-- exception); a name whose fresh guess still lacks it is left alone too (the
+-- punctuation was never going to survive the word-selection either way, so
+-- there is nothing to prefer over what is already stored).
+--
+-- Runs once, from init_plugin_after_load() in db.lua, gated by the
+-- 'kw_hyphen_fix_applied' setting. 'xset kw fix' below re-runs it on demand.
+
+local function _has_hyphen_or_apostrophe(s)
+    return type(s) == "string" and s:find("[%-']") ~= nil
+end
+
+function fix_hyphenated_keywords()
+    local db = db_open()
+    local changed, examined = {}, 0
+
+    for row in db:nrows(
+        "SELECT id, zone, mob_name, keyword FROM mob_keywords"
+    ) do
+        if _has_hyphen_or_apostrophe(row.mob_name) then
+            examined = examined + 1
+            local fresh = gmkw_algorithm(row.mob_name, row.zone)
+            if fresh ~= row.keyword
+            and fresh ~= ""
+            and _has_hyphen_or_apostrophe(fresh)
+            and not _has_hyphen_or_apostrophe(row.keyword) then
+                dbcheck(db, db:exec(
+                    "UPDATE mob_keywords SET keyword = " .. fixsql(fresh) ..
+                    " WHERE id = " .. tostring(row.id)
+                ), "fix_hyphenated_keywords")
+                changed[#changed + 1] = {
+                    mob = row.mob_name, zone = row.zone,
+                    from = row.keyword, to = fresh,
+                }
+            end
+        end
+    end
+    db_close(db)
+    return changed, examined
+end
+
+-- Alias handler: 'xset kw fix'
+--
+-- The startup pass runs once and stays quiet about mobs nobody has met yet.
+-- This is the same repair, run on demand, so a keyword picked up later --
+-- imported, or set by hand before this fix existed -- does not have to wait
+-- for a fresh install to be looked at.
+function xset_kw_fix()
+    local changed, examined = fix_hyphenated_keywords()
+    if examined == 0 then
+        InfoNote("SnD: no stored keywords have a hyphen or apostrophe in the mob name.")
+        return
+    end
+    if #changed == 0 then
+        InfoNote(string.format(
+            "SnD: checked %d keyword(s) with a hyphen or apostrophe in the name -- " ..
+            "none needed fixing.", examined))
+        return
+    end
+    InfoNote(string.format("SnD: fixed %d of %d keyword(s):", #changed, examined))
+    for _, c in ipairs(changed) do
+        InfoNote(string.format("SnD:   %s (%s): '%s' -> '%s'",
+            c.mob, c.zone, c.from, c.to))
+    end
 end
 
 -- ─── PUBLIC API ───────────────────────────────────────────────────────────────
