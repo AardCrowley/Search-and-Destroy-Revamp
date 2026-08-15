@@ -258,6 +258,37 @@ function ErrorNote(...)
     trace_dump("error")
 end
 
+-- "That is not a thing you can type" — same red as an error, no trace dump.
+--
+-- ErrorNote writes the whole trace buffer to disk, on the reasoning that an
+-- error is the moment the preceding notes become worth having. That reasoning
+-- does not hold for a mistyped command: nothing went wrong, the plugin did
+-- exactly what it should, and the resulting file records a typo surrounded by
+-- whatever happened to be in the buffer. Four of them inside ten seconds is
+-- what a player gets for guessing at an option name, and every one of them
+-- makes a real error harder to find.
+--
+-- Use this for anything the player could reach by typing the command wrong,
+-- or by naming something that does not exist. Keep ErrorNote for what was not
+-- supposed to be possible: a caught exception, a failed write, a subsystem
+-- that did not answer.
+function UsageNote(...)
+    print_alternating_note(
+        {...},
+        NOTE_COLORS.ERROR,
+        NOTE_COLORS.ERROR_HIGHLIGHT,
+        NOTE_COLORS.ERROR_BACKGROUND
+    )
+    -- Still recorded: it belongs in the trace as context for a real error
+    -- later on ("they typed this, then that broke"). It just is not one.
+    trace_record("USAGE", {...})
+    if type(snd_get_setting) == "function"
+    and snd_get_setting("debug_mode", "off") == "on" then
+        if not _debug_log_fh then debug_log_open() end
+        debug_log_write("USAGE", ...)
+    end
+end
+
 function ImportantNote(...)
     print_alternating_note(
         {...},

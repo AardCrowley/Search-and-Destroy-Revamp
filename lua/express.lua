@@ -46,14 +46,14 @@ function xset_express(name, line, wildcards)
         InfoNote("SnD: Express mode is now " .. string.upper(state) .. ".")
         changed = true
     elseif state ~= "" then
-        ErrorNote("SnD: xset express: '" .. state .. "' is not on or off.")
+        UsageNote("SnD: xset express: '" .. state .. "' is not on or off.")
         return
     end
 
     if min_kill ~= "" then
         local n = tonumber(min_kill)
         if not n then
-            ErrorNote("SnD: xset express: '" .. min_kill ..
+            UsageNote("SnD: xset express: '" .. min_kill ..
                       "' is not a number of kills.")
             return
         end

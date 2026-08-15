@@ -486,14 +486,37 @@ local function migration_step4_keywords(db)
         WHERE area_name IS NOT NULL AND area_name != ''
     ]]), "step4: stub missing area zones")
 
+    local before = 0
+    for row in db:nrows("SELECT COUNT(*) AS n FROM mob_keyword_exceptions") do
+        before = tonumber(row.n) or 0
+    end
+
     dbcheck(db, db:exec([[
         INSERT OR IGNORE INTO mob_keywords (char_id, zone, mob_name, keyword)
         SELECT NULL, area_name, mob_name, keyword FROM mob_keyword_exceptions
     ]]), "step4: mob_keywords insert")
+    local moved = db:changes()
 
     dbcheck(db, db:exec(
         "ALTER TABLE mob_keyword_exceptions RENAME TO _legacy_mob_keyword_exceptions"
     ), "step4: rename mob_keyword_exceptions")
+
+    -- Counted and said out loud. This is the only moment a player's hand-built
+    -- keywords move, it happens once, unprompted, and it used to announce
+    -- nothing -- so afterwards there was no way to tell "there were none" from
+    -- "they were dropped". INSERT OR IGNORE makes that worse: a row whose area
+    -- is blank fails the foreign key and vanishes without an error.
+    if before > 0 then
+        InfoNote(string.format(
+            "SnD: migration step 4: keywords -- %d of %d moved across.",
+            moved, before))
+        if moved < before then
+            InfoNote(string.format(
+                "SnD: %d keyword(s) could not be moved (no area recorded). " ..
+                "The old table is kept as _legacy_mob_keyword_exceptions.",
+                before - moved))
+        end
+    end
 end
 
 -- Step 5: Migrate old 'area' table → new 'areas' table.

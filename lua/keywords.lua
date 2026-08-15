@@ -365,3 +365,111 @@ function set_current_mob_keyword(keyword)
     end
 end
 
+-- ─── LISTING ─────────────────────────────────────────────────────────────────
+
+-- Every keyword override that applies to this character: the global ones the
+-- upgrade from the old plugin brought across, plus any set for this character
+-- alone. A per-character row wins over a global one for the same mob, so both
+-- are shown where they differ rather than only the one in force.
+--
+-- Returns rows { zone, mob_name, keyword, scope, shadows } sorted by zone then
+-- mob, and the totals for each scope.
+function keyword_list(area_filter)
+    local rows, n_global, n_char = {}, 0, 0
+    local cid = get_current_char_id()
+
+    local ok = pcall(function()
+        local db  = db_open()
+        local globals, mine, order = {}, {}, {}
+        local where = ""
+        if area_filter and area_filter ~= "" then
+            where = " AND zone = " .. fixsql(area_filter)
+        end
+
+        for row in db:nrows(
+            "SELECT zone, mob_name, keyword, char_id FROM mob_keywords " ..
+            "WHERE (char_id IS NULL" ..
+            (cid and (" OR char_id = " .. cid) or "") .. ")" .. where ..
+            " ORDER BY zone, mob_name"
+        ) do
+            local key = tostring(row.zone) .. "\0" .. tostring(row.mob_name)
+            if row.char_id == nil then
+                globals[key] = row
+                n_global = n_global + 1
+            else
+                mine[key] = row
+                n_char = n_char + 1
+            end
+            if not order[key] then
+                order[key] = true
+                rows[#rows + 1] = key
+            end
+        end
+        db_close(db)
+
+        for i, key in ipairs(rows) do
+            local mine_row, glob_row = mine[key], globals[key]
+            local row = mine_row or glob_row
+            rows[i] = {
+                zone     = row.zone,
+                mob_name = row.mob_name,
+                keyword  = row.keyword,
+                scope    = mine_row and "char" or "global",
+                shadows  = (mine_row and glob_row
+                            and glob_row.keyword ~= mine_row.keyword)
+                           and glob_row.keyword or nil,
+            }
+        end
+    end)
+
+    if not ok then return nil end
+    return rows, n_global, n_char
+end
+
+-- Alias handler: 'xset kw list [<area>]'
+--
+-- Months of keyword corrections carried over from the old plugin, and no way
+-- to see whether any of it arrived -- 'xset import' does not cover keywords
+-- and never did, so its report of having imported nothing said nothing about
+-- them either way. This is that answer.
+function xset_kw_list(name, line, wildcards)
+    local w    = (type(wildcards) == "table" and wildcards) or {}
+    local area = Trim(tostring(w.area or "")):lower()
+
+    local rows, n_global, n_char = keyword_list(area ~= "" and area or nil)
+    if not rows then
+        ErrorNote("SnD: could not read the keyword table.")
+        return
+    end
+
+    if #rows == 0 then
+        if area ~= "" then
+            InfoNote("SnD: no keyword overrides for '", area,
+                     "'. Run 'xset kw list' for all areas.")
+        else
+            InfoNote("SnD: no keyword overrides stored. Keywords set in an " ..
+                     "earlier version come across when the database upgrades, " ..
+                     "not through 'xset import' -- if you had some and this " ..
+                     "is empty, say so and send 'snd debug dump'.")
+        end
+        return
+    end
+
+    InfoNote(string.format("SnD: %d keyword override(s)%s -- %d global, %d for this character.",
+        #rows, (area ~= "") and (" in " .. area) or "", n_global, n_char))
+    local last_zone = nil
+    for _, r in ipairs(rows) do
+        if r.zone ~= last_zone then
+            InfoNote("SnD: ", tostring(r.zone))
+            last_zone = r.zone
+        end
+        local suffix = ""
+        if r.scope == "char" then
+            suffix = "   (this character" ..
+                     (r.shadows and (", global: " .. r.shadows) or "") .. ")"
+        end
+        InfoNote("SnD: ", string.format("    %-38s %s%s",
+            tostring(r.mob_name), tostring(r.keyword), suffix))
+    end
+end
+

@@ -386,7 +386,7 @@ function cl_receive(retval, page, status, headers, full_status, request_url)
     local sections = cl_split_sections(page)
     if #sections == 0 then
         if not req.quiet then
-            ErrorNote("SnD: The changelog has no version sections to show.")
+            UsageNote("SnD: The changelog has no version sections to show.")
         end
         return
     end
@@ -433,7 +433,7 @@ function cl_show(mode, req_version, quiet)
     }
     if mode == "since" and not cl_version_parse(req_version) then
         pending = nil
-        ErrorNote("SnD: '", tostring(req_version),
+        UsageNote("SnD: '", tostring(req_version),
                   "' is not a version number. Try: snd changelog since 6.0")
         return
     end

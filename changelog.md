@@ -1,3 +1,128 @@
+# v6.0.4-dev
+
+**A development build.**  Nothing here is in a public release yet.  Run
+`snd version` to see whether you are on one of these.
+
+## Bug Fixes
+
+- **`snd update` reloaded twice.**  Modules and the plugin file are fetched by
+  two independent paths, and both reloaded: the module path reloaded as soon as
+  the last module landed, and replacing the plugin file reloads on its own.  A
+  release that changes both — which is most of them — therefore reloaded twice.
+
+  The visible half was the noise.  The module reload is scheduled a second out
+  while the plugin file is still downloading, so it could restart the plugin
+  with that download still in flight and lose the new plugin file altogether —
+  leaving the version banner offering an update that had, from your side, just
+  been installed, on every run.  Now only one path reloads: the modules hand
+  theirs to the plugin-file check, which either replaces the file and reloads
+  for both, or hands it back.  A module-only update still reloads, including
+  when the plugin file cannot be reached.
+
+  Reported by **Arcylix**.
+
+- **Fixed: room targets could all come out red, unclickable, and with no
+  area.**  Two separate causes, both of which threw away rooms the plugin
+  could perfectly well resolve, and both of which showed up as the same
+  "unknown location" display.
+
+  The first is a missing level.  The campaign level comes from `cp info` /
+  `gq info` and from nowhere else — `cp check` and `gq check` do not carry it
+  — so it is unset for a whole campaign whenever that info was never parsed:
+  a gquest joined before the plugin loaded, or the first one after installing.
+  It was then filtered on as though it were a real level of zero, and since no
+  area has a minimum level of zero, every candidate area was rejected and every
+  target lost its location.  Refreshing with `gq list` or `gq check` could not
+  fix it, because the check is not where the level comes from.  An unknown
+  level is now fetched once, the same way an unknown campaign type already
+  was; if it still is not available, nothing is ruled out by level rather than
+  everything.
+
+  The second is older mapper databases.  The room lookup joined the mapper's
+  rooms to its areas table, which required every area to have a row of its
+  own — but the area key that join returned was the one already on the room,
+  and the area name it fetched was never used, so the join filtered without
+  contributing.  Mapper databases carried forward from years of earlier
+  plugins do not always have a row for every area they have rooms in, and
+  every room in such an area was silently dropped.  The lookup no longer
+  consults that table.
+
+  Reported by **Xaade**.
+
+- **`xset import` no longer reads as a failure when it succeeds.**
+  Its report ended "0 mark(s) added, 28 skipped", which sounds like 28 things
+  it refused.  They were entries already correct — nothing needed importing.
+  It now says so in as many words, and says what it covers: area level ranges,
+  area start rooms and marks.  Keywords and mob tags are *not* part of it and
+  never were; those come across when the database upgrades itself on the first
+  run of the new version.  Nothing said so, so a report of having imported
+  nothing looked like an answer about keywords when it was not one.
+
+  Reported by **Spoke**, who was trying to bring months of keyword work
+  forward.
+
+- **Fixed: a finished gquest's level was applied to the next one.**
+  Ending a campaign clears the level it was taken at, from the database as
+  well as from memory.  Ending a gquest cleared only the memory copy, so the
+  stored value survived — and it is read back on the next reload.  A new
+  gquest could then be filtered against a finished one's effective level,
+  quietly leaving out areas that were perfectly valid for it.  A stale level
+  is worse than a missing one: a missing level is noticed and fetched, while
+  a plausible wrong one is used without question.  A finished gquest's target
+  list is now cleared too, as a finished campaign's already was.
+
+- **`xcp mode ht` says when it uses `where` instead.**
+  On a gquest it has always substituted `where`, because hunt only answers for
+  campaign targets.  That is correct, and it has been the behavior since 2021,
+  but nothing ever said so — a mode set to `ht` simply did something else, and
+  a mode that silently does something else is indistinguishable from one that
+  is broken.  It now says so the first time it substitutes in a gquest, once,
+  not once per target.
+
+- **A mistyped command no longer writes an error report.**
+  Typing an option S&D does not recognize — `xset cols wibble`, `xset nx
+  whatever` — was treated as an internal error, which means the whole recent
+  trace was written to the debug log.  Guessing at an option name a few times
+  produced a file full of trace dumps whose entire contents was the typo, and
+  every one of them made a genuine error harder to find in the same file.
+
+  Rejected command arguments now say the same thing, in the same color, and
+  are still recorded in the trace — "they typed this, then that broke" is
+  exactly the context a dump is for — but no longer trigger one on their own.
+  A real failure still writes the trace immediately and unasked, which is the
+  point of it: nobody turns debugging on until after the thing they wanted to
+  see has happened.  The two are labeled apart in the log.
+
+- **The database upgrade now says how many keywords it moved.**
+  It moves them silently, once, unprompted, and that is the only moment they
+  cross — so afterwards there was no way to tell "there were none" from "they
+  were dropped".  It now reports the count, and reports separately any it
+  could not move because the old row had no area recorded.  The old table is
+  kept either way.
+
+## New
+
+- **`xset kw list [<area>]` — see the keywords you have.**
+  There was no way to look at your own keyword overrides.  If you carried some
+  forward from an earlier version, nothing could tell you whether they had
+  arrived; if a mob was not being found, nothing could tell you what keyword
+  was stored for it.  The list is grouped by area, and marks any keyword that
+  applies only to the current character along with the shared one it is
+  overriding — which is otherwise an unexplainable difference between two
+  characters.
+
+- **`xtest portals` — why the mapper walked when you have a portal.**
+  S&D does not do its own routing: it hands the destination to `mapper goto`
+  and the mapper decides the way, portals included.  So when a portal goes
+  unused the answer is in the mapper's data, and this prints it — every portal
+  the mapper knows, its level requirement, and whether you clear that at your
+  level plus ten per tier.  `xtest portals <area>` narrows it.
+
+  It is also explicit about the two ways that data is thin: a portal the
+  mapper has never watched you use is not recorded at all — an alias of your
+  own that holds and enters one teaches it nothing — and a portal whose
+  destination room the mapper does not have cannot be routed to.
+
 # v6.0.3
 
 ## Bug Fixes

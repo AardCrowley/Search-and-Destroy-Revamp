@@ -349,12 +349,33 @@ end
 -- Entry point: build and store main_target_list, then refresh the window.
 -- cp_or_gq: "cp" | "gq"
 -- area_or_room: "area" | "room"
+-- The level this campaign was taken at, or nil when we were never told.
+--
+-- It comes from 'cp info' / 'gq info' and from nothing else; the checks that
+-- build the list do not carry it. Zero is the never-set value, not a level.
+-- Written out rather than as an and/or chain: with `a and b or c`, a nil b
+-- silently falls through to c, which here would answer a gquest with the
+-- campaign's level.
+local function activity_level(cp_or_gq)
+    local lvl
+    if cp_or_gq == "gq" then
+        lvl = tonumber(gq_info_efflvl)
+    else
+        lvl = tonumber(cp_info_level)
+    end
+    if lvl and lvl > 0 then return lvl end
+    return nil
+end
+
 function build_main_target_list(cp_or_gq, area_or_room)
-    if area_or_room == "area" then
-        main_target_list = build_area_targets(cp_or_gq)
-    elseif area_or_room == "room" then
-        main_target_list, room_targets_ignored = build_room_targets(cp_or_gq)
-    elseif area_or_room == "none" or area_or_room == nil then
+    -- Room targets are filtered against the campaign level, so a room list
+    -- built without one is either unfiltered or -- before the level was
+    -- allowed to be unknown -- empty. Fetch the level the same way, and for
+    -- the same reason, as the type below.
+    local need_level = (area_or_room == "room")
+                       and not activity_level(cp_or_gq)
+
+    if area_or_room == "none" or area_or_room == nil or need_level then
         -- The campaign type is not known yet, which after a reload is every
         -- time: it comes from parsing 'cp info' / 'gq info' output and does
         -- not survive one.
@@ -371,14 +392,32 @@ function build_main_target_list(cp_or_gq, area_or_room)
         -- the check.
         if _type_recovery_tried or type(fetch) ~= "function" then
             _type_recovery_tried = false
-            InfoNote("SnD: '", what, "' did not say whether this campaign is ",
-                     "by area or by room. If you are not on one, that is why.")
+            if need_level then
+                -- Not fatal any more: the list is built without the level
+                -- filter rather than filtered down to nothing. Said out loud
+                -- because it is the reason targets in wildly wrong areas can
+                -- appear, and because 'gq info' is the fix and no amount of
+                -- re-running the check is.
+                InfoNote("SnD: '", what, "' did not give a level, so no area ",
+                         "is being ruled out by level. Run '", what,
+                         "' if the list looks too broad.")
+            else
+                InfoNote("SnD: '", what, "' did not say whether this campaign is ",
+                         "by area or by room. If you are not on one, that is why.")
+                return
+            end
+        else
+            _type_recovery_tried = true
+            InfoNote("SnD: no target list yet -- running '", what, "' first.")
+            fetch()
             return
         end
-        _type_recovery_tried = true
-        InfoNote("SnD: no target list yet -- running '", what, "' first.")
-        fetch()
-        return
+    end
+
+    if area_or_room == "area" then
+        main_target_list = build_area_targets(cp_or_gq)
+    elseif area_or_room == "room" then
+        main_target_list, room_targets_ignored = build_room_targets(cp_or_gq)
     else
         ErrorNote("SnD: build_main_target_list: unknown area_or_room value: " .. tostring(area_or_room))
         return
@@ -581,6 +620,22 @@ function build_room_targets(cp_gq)
         and tonumber(cp_info_level)
         or  tonumber(gq_info_efflvl) or 0
 
+    -- Zero is "we were never told", not "level zero".  The level comes from
+    -- 'cp info' / 'gq info' and nothing else -- 'cp check' and 'gq check' do
+    -- not carry it -- so it is absent for a whole campaign whenever the info
+    -- was not parsed: a gquest joined before the plugin loaded, or the first
+    -- one after installing.
+    --
+    -- Filtering on it anyway rejected every candidate area, since no area has
+    -- a minimum level of zero, and every room target came out as "unknown
+    -- location": red, unclickable, no area.  The list looked broken rather
+    -- than unfiltered, and re-running the check could not fix it because the
+    -- check is not where the level comes from.
+    --
+    -- An unknown level now filters nothing.  Too many targets is a far better
+    -- failure than none, and it is visibly a smaller lie.
+    local level_known = level_taken and level_taken > 0
+
     local high, low, ig = {}, {}, {}
     local level_overrides = get_level_overrides()
 
@@ -601,10 +656,18 @@ function build_room_targets(cp_gq)
         local areas_sql   = {}
 
         -- Room lookup in mapper.
+        --
+        -- No join to the mapper's areas table. It used to be an INNER JOIN,
+        -- which read as harmless because the area key it returned was the
+        -- room's own r.area by the join condition, and the area name it also
+        -- selected was never used -- so the join contributed nothing but a
+        -- requirement that the area have a row of its own. Mapper databases
+        -- carried over from years of earlier plugins do not always have one
+        -- for every area they have rooms in, and every room in such an area
+        -- was dropped here and reported as an unknown location.
         for row in mapdb:nrows(
-            "SELECT r.uid AS roomid, r.name AS room_name, a.uid AS arid, a.name AS area_name " ..
-            "FROM rooms r INNER JOIN areas a ON r.area = a.uid " ..
-            "WHERE r.name = " .. fixsql(v.loc) .. " ORDER BY a.uid"
+            "SELECT uid AS roomid, name AS room_name, area AS arid FROM rooms " ..
+            "WHERE name = " .. fixsql(v.loc) .. " ORDER BY area"
         ) do
             local lvl_min = 1
             local lvl_max = 201
@@ -625,7 +688,8 @@ function build_room_targets(cp_gq)
             -- otherwise level-90+ area) -- otherwise a genuinely-present room
             -- match gets silently discarded before we ever check the room name.
             local level_ok  = mob_has_tag(v.mob, row.arid, "levelok")
-            if level_ok or (level_taken >= lvl_min and level_taken <= (lvl_max + lvl_buf)) then
+            if level_ok or not level_known
+            or (level_taken >= lvl_min and level_taken <= (lvl_max + lvl_buf)) then
                 possibilities[#possibilities+1] = {
                     mob=v.mob, arid=row.arid,
                     roomid=tonumber(row.roomid), roomName=row.room_name,
@@ -1474,6 +1538,8 @@ end
 
 function player_not_on_gq()
     player_on_gq = "no"
+    -- The next gquest gets told again if its mode still substitutes.
+    if type(reset_ht_on_gq_notice) == "function" then reset_ht_on_gq_notice() end
     -- These are the groups the XML actually defines. The previous name here,
     -- "trg_gq", matches no trigger at all, so EnableTriggerGroup was a silent
     -- no-op and the GQ message triggers -- switched on when a GQ starts, and
@@ -1482,7 +1548,15 @@ function player_not_on_gq()
     EnableTriggerGroup("trg_gqmsg", false)
     EnableTriggerGroup("trg_gqmsg_ext", false)
     gq_check_list    = {}
+    gq_info_list     = {}
     gq_info_efflvl   = 0
+    -- Cleared in the settings table too, not just in memory. The campaign side
+    -- has always done this for cp_level_taken; the gquest side zeroed the
+    -- variable and left the stored value, so the next reload read a finished
+    -- gquest's level back in and the next gquest was filtered against it. A
+    -- stale level is worse than none: an absent one is noticed and fetched,
+    -- while a plausible wrong one is used without question.
+    snd_set_setting("gq_info_efflvl", "0", false)
     gq_info_minlvl   = 0
     gq_info_maxlvl   = 0
     -- Always flush the GQ window cache so the tab clears immediately.

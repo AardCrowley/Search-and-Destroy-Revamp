@@ -449,7 +449,7 @@ function xset_autonav(name, line, wildcards)
                  " -- auto-navigates when xcp/qw resolves to exactly one room.")
         InfoNote("SnD: Usage: xset autonav [on|off]")
     else
-        ErrorNote("SnD: xset autonav: invalid option '" .. opt .. "'. Use on or off.")
+        UsageNote("SnD: xset autonav: invalid option '" .. opt .. "'. Use on or off.")
     end
 end
 
@@ -514,11 +514,26 @@ xcp_index_attempt = 0
 --
 -- 'ht' is campaign-only.  Hunt does not answer for gquest mobs, so a gquest
 -- falls back to 'where' -- which is what the area route has always done.
+-- Said once per gquest rather than once per target: the substitution is the
+-- same every time, and repeating it on every xcp would be noise.
+local _ht_on_gq_explained = false
+function reset_ht_on_gq_notice() _ht_on_gq_explained = false end
+
 local function xcp_arrival_action(t)
     local action = snd_get_setting("xcp_action_mode", "qw")
     if action == "ht" and current_activity == "cp" then
         return function() do_hunt_trick(1, t.kw) end
     elseif action == "qw" or (action == "ht" and current_activity ~= "cp") then
+        -- 'ht' quietly became 'qw' on anything that is not a campaign, and had
+        -- since 2021. The substitution is right -- hunt only answers for
+        -- campaign targets -- but saying nothing makes a correctly-set mode
+        -- look broken, which is exactly the report that led here.
+        if action == "ht" and not _ht_on_gq_explained then
+            _ht_on_gq_explained = true
+            InfoNote("SnD: 'xcp mode ht' uses 'where' on a gquest -- hunt " ..
+                     "only answers for campaign targets. The mode itself is " ..
+                     "unchanged.")
+        end
         return function() qw_exact() end
     end
     return nil
@@ -1292,7 +1307,7 @@ function xset_nx(name, line, wildcards)
         if NX_DESC[cur] then InfoNote("SnD: " .. NX_DESC[cur]) end
         InfoNote("SnD: Options: " .. table.concat(NX_ORDER, ", "))
     else
-        ErrorNote("SnD: Unknown nx action '" .. opt .. "'.")
+        UsageNote("SnD: Unknown nx action '" .. opt .. "'.")
         InfoNote("SnD: Options: " .. table.concat(NX_ORDER, ", "))
     end
 end
@@ -1320,7 +1335,7 @@ function xset_autoreload(name, line, wildcards)
                  "progress; otherwise it tells you to type 'snd reload'.")
         InfoNote("SnD: Usage: xset autoreload [on|off]")
     else
-        ErrorNote("SnD: xset autoreload: use 'on' or 'off'.")
+        UsageNote("SnD: xset autoreload: use 'on' or 'off'.")
     end
 end
 
@@ -1349,7 +1364,7 @@ function xset_level_buffer(name, line, wildcards)
         return
     end
     if n < 0 or n > 200 then
-        ErrorNote("SnD: Level buffer must be between 0 and 200.")
+        UsageNote("SnD: Level buffer must be between 0 and 200.")
         return
     end
     snd_set_setting("level_buffer", tostring(n), true)
@@ -1371,7 +1386,7 @@ function xset_level_area(name, line, wildcards)
         return
     end
     if not minlvl or not maxlvl or minlvl > maxlvl then
-        ErrorNote("SnD: Invalid range — min must be ≤ max.")
+        UsageNote("SnD: Invalid range — min must be ≤ max.")
         return
     end
     -- Update the stored comma-separated list.

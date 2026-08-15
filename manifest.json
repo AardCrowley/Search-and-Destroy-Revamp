@@ -1,5 +1,5 @@
 {
-  "version": "6.0.3",
+  "version": "6.0.4-dev",
   "files": [
     {
       "file": "constants.lua",
@@ -8,13 +8,13 @@
     },
     {
       "file": "util.lua",
-      "hash": "109eecf8",
-      "size": 26178
+      "hash": "d0d00b70",
+      "size": 27584
     },
     {
       "file": "db.lua",
-      "hash": "528e0158",
-      "size": 36282
+      "hash": "7e51eb70",
+      "size": 37277
     },
     {
       "file": "settings.lua",
@@ -28,8 +28,8 @@
     },
     {
       "file": "areas.lua",
-      "hash": "acc50e70",
-      "size": 40931
+      "hash": "1696be7a",
+      "size": 42136
     },
     {
       "file": "mobs.lua",
@@ -38,32 +38,32 @@
     },
     {
       "file": "keywords.lua",
-      "hash": "fb9cb788",
-      "size": 14853
+      "hash": "d64efa00",
+      "size": 19108
     },
     {
       "file": "targets.lua",
-      "hash": "0d2ad35a",
-      "size": 72349
+      "hash": "2728f200",
+      "size": 76188
     },
     {
       "file": "pathing.lua",
-      "hash": "acd22286",
+      "hash": "927fd814",
       "size": 68318
     },
     {
       "file": "express.lua",
-      "hash": "410802a0",
+      "hash": "3134b9e2",
       "size": 3873
     },
     {
       "file": "navigation.lua",
-      "hash": "8369cd80",
-      "size": 57954
+      "hash": "91a95500",
+      "size": 58800
     },
     {
       "file": "hunting.lua",
-      "hash": "9cb57d80",
+      "hash": "947ce19c",
       "size": 15507
     },
     {
@@ -73,12 +73,12 @@
     },
     {
       "file": "history.lua",
-      "hash": "2efaf930",
+      "hash": "c1c40bc8",
       "size": 38888
     },
     {
       "file": "window.lua",
-      "hash": "e41ad8f0",
+      "hash": "3f29161a",
       "size": 71922
     },
     {
@@ -88,12 +88,12 @@
     },
     {
       "file": "help.lua",
-      "hash": "a11209f0",
-      "size": 87905
+      "hash": "4e5e5072",
+      "size": 88910
     },
     {
       "file": "changelog.lua",
-      "hash": "6845c510",
+      "hash": "a3847e5a",
       "size": 19428
     },
     {

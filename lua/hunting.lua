@@ -404,6 +404,6 @@ function xset_silent_mode(name, line, wildcards)
         snd_set_setting("silent_mode", opt, false)
         InfoNote("SnD: Silent mode is now " .. string.upper(opt) .. ".")
     else
-        ErrorNote("SnD: xset silent [on|off]")
+        UsageNote("SnD: xset silent [on|off]")
     end
 end

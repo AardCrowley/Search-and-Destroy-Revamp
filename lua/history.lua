@@ -841,7 +841,7 @@ function alias_print_stats(name, line, wildcards)
     elseif arg1 == "campaign" then history_type = HISTORY_TYPE_CP
     elseif arg1 == "gquest"   then history_type = HISTORY_TYPE_GQ
     else
-        ErrorNote("SnD: Usage: snd stats <quest|campaign|gquest|overtime|areas> [day|week|month|year [N|last]]")
+        UsageNote("SnD: Usage: snd stats <quest|campaign|gquest|overtime|areas> [day|week|month|year [N|last]]")
         return
     end
 

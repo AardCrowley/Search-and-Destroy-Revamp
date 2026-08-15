@@ -156,7 +156,7 @@ table_width = 80
 -- Keep it in step with the VERSION file; tests/version_consistency_test.lua
 -- fails the build if they disagree, and checks the attribute is the
 -- major.minor of it.
-SND_VERSION = "6.0.3"
+SND_VERSION = "6.0.4-dev"
 
 -- snd_version() also exists in constants.lua, for the modules to call: modules
 -- are updated by 'snd update' while this file is not, so a module calling a
@@ -1973,6 +1973,106 @@ function xtest_noportal(name, line, wildcards)
     end
 end
 
+-- Alias handler: 'xtest portals [<area>]'.
+--
+-- Why the mapper walked somewhere you have a portal for.
+--
+-- S&D does not route: it hands the destination to 'mapper goto' and the mapper
+-- picks the way, portals included. So when a portal goes unused the answer is
+-- in the mapper's own data, and this prints it -- every portal it knows, what
+-- it costs in level, and whether you clear that. A portal you hold and have an
+-- alias for is invisible to the mapper until the mapper has seen you use it;
+-- there is no row here for a portal it has never watched you take.
+function xtest_portals(name, line, wildcards)
+    if not mapper_db_file then
+        InfoNote("SnD: no mapper database; cannot list portals.")
+        return
+    end
+    local w      = (type(wildcards) == "table" and wildcards) or {}
+    local filter = Trim(tostring(w.area or "")):lower()
+
+    local lvl  = tonumber(gmcp("char.status.level"))
+    local tier = tonumber(gmcp("char.base.tier")) or 0
+    -- Equipment, portals included, is usable at level + tier*10.
+    local usable = lvl and (lvl + tier * 10) or nil
+
+    local rows, has_level = {}, true
+    local function load(with_level)
+        return pcall(function()
+            local db = sqlite3.open(mapper_db_file)
+            for row in db:nrows(
+                "SELECT e.touid AS uid, " ..
+                (with_level and "e.level AS lvl, " or "NULL AS lvl, ") ..
+                "r.name AS name, r.area AS area " ..
+                "FROM exits e LEFT JOIN rooms r ON r.uid = e.touid " ..
+                "WHERE e.fromuid = '*' ORDER BY r.area, e.touid") do
+                rows[#rows + 1] = row
+            end
+            db:close()
+        end)
+    end
+    -- A mapper database old enough to have no level column still has portals.
+    if not load(true) then
+        rows, has_level = {}, false
+        if not load(false) then
+            InfoNote("SnD: could not read the mapper database.")
+            return
+        end
+    end
+
+    if #rows == 0 then
+        InfoNote("SnD: the mapper has no portals recorded at all. It learns " ..
+                 "one by watching you use it -- an alias of your own that " ..
+                 "holds and enters a portal teaches it nothing.")
+        return
+    end
+
+    if usable then
+        InfoNote(string.format(
+            "SnD: level %d, tier %d -- you can use portals up to level %d.",
+            lvl, tier, usable))
+    else
+        InfoNote("SnD: no level from GMCP, so nothing below is marked usable.")
+    end
+    if not has_level then
+        InfoNote("SnD: this mapper database has no level column on its exits, " ..
+                 "so no portal here carries a requirement.")
+    end
+
+    local shown, hidden = 0, 0
+    for _, r in ipairs(rows) do
+        local area = tostring(r.area or "?")
+        if filter == "" or area:lower():find(filter, 1, true)
+        or tostring(r.name or ""):lower():find(filter, 1, true) then
+            shown = shown + 1
+            local req  = tonumber(r.lvl)
+            local mark = ""
+            if req and usable then
+                mark = (req <= usable) and "" or "  <-- above your level"
+            end
+            -- A portal whose destination is not in rooms is a real finding:
+            -- the mapper cannot route to somewhere it has no room for.
+            local dest = r.name and tostring(r.name)
+                or "(destination not in the mapper's rooms)"
+            InfoNote("SnD: ", string.format("  %-8s %-14s lvl %-4s %s%s",
+                tostring(r.uid), area, req and tostring(req) or "-",
+                dest, mark))
+        else
+            hidden = hidden + 1
+        end
+    end
+
+    if shown == 0 then
+        InfoNote("SnD: no portal matches '", filter, "'. ", tostring(#rows),
+                 " recorded in all -- run 'xtest portals' bare to see them.")
+    elseif hidden > 0 then
+        InfoNote("SnD: ", tostring(hidden), " more not matching '", filter, "'.")
+    end
+    InfoNote("SnD: a portal listed and within your level that still goes " ..
+             "unused is the mapper's own routing decision -- compare with " ..
+             "'mapper goto <roomid>' directly.")
+end
+
 -- Alias handler: 'xtest pathcompare [<roomid> ...]'.
 --
 -- Runs both searches over a set of real destinations and reports where they
@@ -2442,6 +2542,26 @@ end
 -- Releases compare versions first; a dev branch cannot, since its version does
 -- not change between pushes. Testing plugin-file changes is the main reason
 -- 'snd dev update' exists, so it always takes the branch's copy.
+-- Modules finished downloading and want a reload, which has not happened yet
+-- because the plugin file may be about to be replaced -- and replacing it
+-- reloads on its own.
+--
+-- Reloading for the modules straight away produced two reloads on any run that
+-- changed both, which is what a release usually does. Worse than the noise:
+-- the module reload is scheduled a second out while the plugin fetch is still
+-- in flight, so it could tear the Lua state down with the callback pending and
+-- lose the plugin update entirely -- leaving the version banner still offering
+-- an update that had, from the user's side, just been installed.
+--
+-- So exactly one path reloads. Whoever ends up last hands it back here.
+_snd_pending_module_reload = false
+
+function _snd_consume_pending_reload()
+    if not _snd_pending_module_reload then return end
+    _snd_pending_module_reload = false
+    _snd_reload_or_prompt()
+end
+
 function _snd_update_plugin_file_from(ref)
     download_file(snd_raw_url("Search_and_Destroy.xml", ref),
                   callback_update_plugin)
@@ -2449,9 +2569,17 @@ end
 
 function _snd_update_plugin_file_if_stale()
     download_file(snd_raw_url("VERSION"), function(retval, page, status)
-        if status ~= 200 or not page then return end
+        -- Every path that does not go on to replace the plugin file has to
+        -- hand the reload back, or a module-only update never applies.
+        if status ~= 200 or not page then
+            _snd_consume_pending_reload()
+            return
+        end
         local latest = Trim(page)
-        if latest == "" or latest == _snd_version_str() then return end
+        if latest == "" or latest == _snd_version_str() then
+            _snd_consume_pending_reload()
+            return
+        end
         ColourNote("silver", "",
             "SnD: Plugin file is v" .. _snd_version_str() ..
             ", latest is v" .. latest .. " -- updating it too.")
@@ -2468,6 +2596,8 @@ function callback_update_plugin(retval, page, status, headers, full_status, requ
         ErrorNote("SnD: could not fetch the plugin for ",
                   tostring(_snd_plugin_update_ref), " (HTTP ", tostring(status), ").")
         ErrorNote("SnD: your modules are current; the plugin file was left alone.")
+        -- The modules did land, and they still need a reload to take effect.
+        _snd_consume_pending_reload()
         return
     end
     -- A string, not tonumber(): tonumber("6.0.1") is nil, which would print
@@ -2499,10 +2629,14 @@ function callback_update_plugin(retval, page, status, headers, full_status, requ
     if not file then
         ErrorNote("SnD: could not open the plugin file for writing: ", tostring(path))
         ErrorNote("SnD: the update was not applied.")
+        _snd_consume_pending_reload()
         return
     end
     file:write(page)
     file:close()
+
+    -- The write below reloads, which covers the modules too.
+    _snd_pending_module_reload = false
     if "" == GetAlphaOption("script_prefix") then
         SetAlphaOption("script_prefix", "\\\\\\")
     end
@@ -3246,7 +3380,7 @@ function xset_area_edit_difficulty(name, line, wildcards)
     local key = wildcards["key"]
     local n   = tonumber(wildcards["diff"])
     if not n or n < 0 or n > 5 then
-        ErrorNote("SnD: difficulty must be 1-5, or 0 to clear it.")
+        UsageNote("SnD: difficulty must be 1-5, or 0 to clear it.")
         return
     end
     n = math.floor(n)
@@ -4327,6 +4461,11 @@ function _snd_smart_update(force, ref)
         return
     end
 
+    -- Start from a clean slate: a run that died between the modules landing
+    -- and the plugin check answering would otherwise leave this set, and the
+    -- next run would reload for updates it did not download.
+    _snd_pending_module_reload = false
+
     local json_ok
     if not json then
         json_ok, json = pcall(require, "json")
@@ -4497,10 +4636,11 @@ function _snd_smart_update(force, ref)
                             "SnD: Download failed: " .. table.concat(dl_failed, ", "))
                     end
 
+                    -- Not reloaded here: the plugin file is checked next, and
+                    -- replacing it reloads by itself. Whichever path ends up
+                    -- last does the single reload.
                     local total_ok = #plain + #merged + #sidecars
-                    if total_ok > 0 then
-                        _snd_reload_or_prompt()
-                    end
+                    _snd_pending_module_reload = (total_ok > 0)
 
                     -- Modules are only half the plugin. The version banner
                     -- compares the published VERSION against PLUGIN_VERSION,
@@ -4677,6 +4817,7 @@ local _snd_subroutines = {
     "xset_area_list_unset", "xset_autonav", "xset_autoreload", "xset_cols",
     "xset_con_overwrite",
     "xset_debug", "xset_express", "xset_gqalias", "xset_import_area_vars", "xset_kw",
+    "xset_kw_list",
     "xset_index_areas", "xset_level_area", "xset_level_area_reset", "xset_level_buffer",
     "xset_mark_current", "xset_mark_set", "xset_marks_delete", "xset_marks_edit",
     "xset_marks_list", "xset_marks_search", "xset_maze", "xset_maze_delete",
@@ -4691,6 +4832,7 @@ local _snd_subroutines = {
     "xtest_gq_end", "xtest_gq_join", "xtest_gq_kill", "xtest_gq_lose",
     "xtest_gq_quit", "xtest_gq_start", "xtest_gq_waiting", "xtest_gq_win",
     "xtest_loadroom", "xtest_mcvars", "xtest_noportal", "xtest_pathcompare",
+    "xtest_portals",
     "xtest_popmsg",
     "xtest_print_target", "xtest_roomhist", "xtest_set_qt", "xtest_xcp",
 }
@@ -5046,6 +5188,7 @@ end
 
         <alias match="^xset kw$" script="set_mob_keyword" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
+        <alias match="^xset kw list(?: (?<area>\S+))?$" script="xset_kw_list" enabled="y" regexp="y" sequence="99" ignore_case="y" send_to="12"></alias>
         <alias match="^xset kw (?<keyword>.+)$" script="xset_kw" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xset marks$" script="xset_marks_list" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
@@ -5108,6 +5251,7 @@ end
 
         <!-- xtest commands -->
         <alias match="^xtest noportal$" script="xtest_noportal" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xtest portals(?: (?<area>.+))?$" script="xtest_portals" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^xtest pathcompare(?: (?<rooms>[\d ]+))?$" script="xtest_pathcompare" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^xtest findpath(?: (?<src>\d+))? (?<dst>\d+)$" script="xtest_findpath" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 

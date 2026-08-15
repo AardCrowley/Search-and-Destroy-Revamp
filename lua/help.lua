@@ -536,7 +536,7 @@ local TOPICS = {
             },
             {
                 heading = "ht",
-                text    = "Automatically start a hunt trick (see 'xhelp ht').  Hunt does not answer for gquest mobs, so on a gquest this falls back to 'where'.",
+                text    = "Automatically start a hunt trick (see 'xhelp ht').  Hunt only answers for campaign targets, so on a gquest this uses 'where' instead -- the mode is not changed, and S&D says so the first time it substitutes in a gquest.",
             },
             {
                 heading = "qw",
@@ -649,6 +649,7 @@ local TOPICS = {
         syntax   = {
             "xset kw <keyword>   (set keyword while on target)",
             "xset kw             (interactive keyword dialog)",
+            "xset kw list [<area>]  (show the keywords you have stored)",
         },
         summary  = "Override a mob's target keyword when the default does not work.",
         sections = {
@@ -659,8 +660,16 @@ local TOPICS = {
                 heading = "Interactive mode",
                 text    = "Typing 'xset kw' with no argument opens a step-by-step dialog that walks you through selecting the mob and entering the keyword.",
             },
+            {
+                heading = "list",
+                text    = "'xset kw list' shows every keyword override you have, grouped by area, with 'xset kw list <area>' for one of them. Keywords set in an earlier version of S&D are carried over automatically when the database upgrades itself on first run -- they are not part of 'xset import', which covers area level ranges, start rooms and marks only. If you brought keywords forward and this list is empty, that is worth reporting.",
+            },
+            {
+                heading = "Who a keyword applies to",
+                text    = "A keyword you set applies to all your characters. Ones carried over from an older version do too. The list marks any that apply to the current character alone, and shows the shared keyword they are overriding.",
+            },
         },
-        see_also = { "ms", "xset mob" },
+        see_also = { "ms", "xset mob", "xset import" },
     },
 
     {

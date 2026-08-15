@@ -1493,7 +1493,7 @@ function xset_pathing(name, line, wildcards)
         return
     end
     if opt ~= "on" and opt ~= "off" then
-        ErrorNote("SnD: Usage: xset pathing <on|off>")
+        UsageNote("SnD: Usage: xset pathing <on|off>")
         return
     end
     snd_set_setting("pathing_enabled", opt, true)
@@ -1510,7 +1510,7 @@ function xset_pathing_express(name, line, wildcards)
         return
     end
     if opt ~= "off" and opt ~= "first" and opt ~= "last" then
-        ErrorNote("SnD: Usage: xset pathing express <off|first|last>")
+        UsageNote("SnD: Usage: xset pathing express <off|first|last>")
         return
     end
     snd_set_setting("pathing_express_group", opt, true)

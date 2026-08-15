@@ -164,7 +164,7 @@ function xset_mark_current(name, line, wildcards)
     local rname  = strip_colours(gmcp("room.info.name") or "")
 
     if zone == "" or not roomid or roomid <= 0 then
-        ErrorNote("SnD: No room data available — are you connected and in a room?")
+        UsageNote("SnD: No room data available — are you connected and in a room?")
         return
     end
 
@@ -574,11 +574,29 @@ function xset_import_area_vars(name, line, wildcards)
 
     InfoNote(string.format(
         "SnD: Import complete — %d area(s) added, %d start room(s) updated, " ..
-        "%d mark(s) added, %d skipped.",
+        "%d mark(s) added, %d already correct.",
         imported_areas, updated_starts, imported_marks, skipped))
     if imported_marks > 0 then
         InfoNote("SnD: Room names will be filled in automatically as you visit each marked room.")
     end
+
+    -- "0 imported, 28 skipped" reads as a failure, and the command's name
+    -- invites the reading that everything from the old plugin comes through
+    -- here. Neither is so: skipped rows are ones already matching, and this
+    -- only ever covered area ranges, start rooms and marks. Keywords, mob
+    -- tags and history come across when the database upgrades itself on the
+    -- first run of the new version, which has already happened by the time
+    -- anyone can type this. Said plainly, because someone with months of
+    -- keyword work has no other way to tell those two apart.
+    if imported_areas == 0 and updated_starts == 0 and imported_marks == 0 then
+        InfoNote("SnD: Nothing needed importing -- ", tostring(skipped),
+                 " entr", (skipped == 1) and "y was" or "ies were",
+                 " already correct. That is a finished import, not a failed one.")
+    end
+    InfoNote("SnD: 'xset import' covers area level ranges, area start rooms " ..
+             "and marks. Keywords and mob tags are not part of it: those came " ..
+             "across when the database upgraded on first run. " ..
+             "'xset kw list' shows the keywords you have.")
 end
 
 -- ─── IN-MEMORY MAZE ROOM CACHE ────────────────────────────────────────────────
@@ -693,7 +711,7 @@ end
 function maze_room_add(roomid, zone)
     local rid = tonumber(roomid)
     if not rid or rid <= 0 then
-        ErrorNote("SnD: maze_room_add: invalid room ID: " .. tostring(roomid))
+        UsageNote("SnD: maze_room_add: invalid room ID: " .. tostring(roomid))
         return
     end
 
@@ -719,7 +737,7 @@ end
 function maze_room_delete(roomid)
     local rid = tonumber(roomid)
     if not rid then
-        ErrorNote("SnD: maze_room_delete: invalid room ID: " .. tostring(roomid))
+        UsageNote("SnD: maze_room_delete: invalid room ID: " .. tostring(roomid))
         return
     end
 
@@ -822,7 +840,7 @@ end
 -- Returns true on success.  Prints an error and returns false on failure.
 function area_delete(key)
     if not key or key == "" then
-        ErrorNote("SnD: area_delete: no key provided")
+        UsageNote("SnD: area_delete: no key provided")
         return false
     end
 
@@ -836,12 +854,12 @@ function area_delete(key)
 
     if source == nil then
         db_close(db)
-        ErrorNote("SnD: Area '" .. key .. "' not found.")
+        UsageNote("SnD: Area '" .. key .. "' not found.")
         return false
     end
     if source == "json" then
         db_close(db)
-        ErrorNote("SnD: Cannot delete '" .. key .. "' — it is a base area seeded from areas.json.")
+        UsageNote("SnD: Cannot delete '" .. key .. "' — it is a base area seeded from areas.json.")
         return false
     end
 
@@ -866,7 +884,7 @@ end
 -- Returns true on success, false on failure.
 function area_edit(key, field, value)
     if not key or key == "" then
-        ErrorNote("SnD: area_edit: no key provided")
+        UsageNote("SnD: area_edit: no key provided")
         return false
     end
 
@@ -875,7 +893,7 @@ function area_edit(key, field, value)
         noquest = true, vidblain = true, difficulty = true, name = true,
     }
     if not allowed[field] then
-        ErrorNote("SnD: area_edit: unknown field '" .. tostring(field) .. "'")
+        UsageNote("SnD: area_edit: unknown field '" .. tostring(field) .. "'")
         return false
     end
 
@@ -889,12 +907,12 @@ function area_edit(key, field, value)
 
     if source == nil then
         db_close(db)
-        ErrorNote("SnD: Area '" .. key .. "' not found.")
+        UsageNote("SnD: Area '" .. key .. "' not found.")
         return false
     end
     if source == "json" then
         db_close(db)
-        ErrorNote("SnD: Cannot edit '" .. key .. "' — it is a base area seeded from areas.json.")
+        UsageNote("SnD: Cannot edit '" .. key .. "' — it is a base area seeded from areas.json.")
         return false
     end
 
@@ -905,12 +923,12 @@ function area_edit(key, field, value)
         local n = tonumber(value)
         if n == nil then
             db_close(db)
-            ErrorNote("SnD: area_edit: value must be numeric for field '" .. field .. "'")
+            UsageNote("SnD: area_edit: value must be numeric for field '" .. field .. "'")
             return false
         end
         if field == "difficulty" and (n < 1 or n > 5) then
             db_close(db)
-            ErrorNote("SnD: area difficulty must be 1-5.")
+            UsageNote("SnD: area difficulty must be 1-5.")
             return false
         end
         value_sql = tostring(math.floor(n))

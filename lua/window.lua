@@ -1398,7 +1398,7 @@ function xset_cols(name, line, wildcards)
     if bad then
         local names = {}
         for _, c in ipairs(LIST_COLUMNS) do names[#names + 1] = c.key end
-        ErrorNote("SnD: xset cols: '", bad, "' is not a column, on, off, or a ",
+        UsageNote("SnD: xset cols: '", bad, "' is not a column, on, off, or a ",
                   "width. Columns: ", table.concat(names, ", "), ".")
         return
     end
@@ -1437,7 +1437,7 @@ function xset_cols(name, line, wildcards)
 
     if width then
         if not def.width_setting then
-            ErrorNote("SnD: xset cols: the ", def.label,
+            UsageNote("SnD: xset cols: the ", def.label,
                       " column has no adjustable width.")
             return
         end
