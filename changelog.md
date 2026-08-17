@@ -5,6 +5,98 @@
 
 ## Bug Fixes
 
+- **Fixed: `xcp mode ht` could cancel its own `where` the moment a hunt
+  trick had escalated past the first same-named mob.**  Arriving at the
+  target sends `where` to pin down the exact room, then cleans up any of the
+  hunt trick's own leftover `hunt N.mob` replies still queued server-side by
+  sending `stop` — but `stop` clears the whole pending command queue, not
+  just hunt commands, and it ran *after* the `where` had already gone out.
+  So any hunt trick that took more than one try — several mobs sharing a
+  keyword, ordinary and unremarkable — sent `where`, then immediately
+  canceled it. The cleanup now runs first.
+  Reported by **MiSolo**, who traced it to the exact line.
+
+- **Fixed: `xcp` could silently navigate to the wrong activity when running
+  a campaign and a global quest at the same time.**  There is only the one
+  navigator for both, and it acted on whichever was checked most recently —
+  which is not necessarily the one you meant, and could change in the
+  background (a gquest kill re-checks the gquest on its own).  `xcp` now
+  notices when the tab you're looking at disagrees with the one it was about
+  to act on, and switches to match before doing anything, saying so out
+  loud.  Only applies when both are actually running; a single active
+  campaign or gquest is unaffected.
+
+- **Fixed: the "Today" campaign count in the miniwindow only updated if you
+  ran `cp check` by hand while between campaigns.**  Aardwolf only includes
+  "You have completed N campaign(s) today" in `cp check`'s response while
+  you are not currently on one — actively working a campaign never showed
+  it at all, no matter how many you finished.  Completing or quitting a
+  campaign now triggers that check itself, right after the moment it lands
+  you between campaigns, instead of leaving it to chance.
+  Reported by **Spoke**.
+
+- **Fixed: `xset win max/expand` and `min/collapse` didn't do what they were
+  documented to.**  Both actually flipped `list_display_mode` — whether the
+  target list auto-grows to fit its content or scrolls at a fixed height —
+  a real, separate setting already exposed on its own via the right-click
+  menu's "Auto-Expand List" entry.  Neither form ever touched the window's
+  own height, despite the help text promising a collapse to "its normal and
+  minimized state."  `min`/`collapse` now rolls the window up to just
+  beneath the tab and TNL bar and remembers the height it was at;
+  `max`/`expand` restores it.  A manual drag-resize clears the rolled-up
+  state, and both survive a plugin reload.
+  Reported by **Crowley**.
+
+- **Fixed: a room-name CP/GQ match could ignore an area's real level range
+  entirely, treating it as 1-201.**  Migrating mob or keyword data ahead of
+  an area ever being indexed creates a placeholder row for it — just a key
+  and a name, to satisfy a foreign key — with no real level data, so the
+  database's own default (1-201, wide enough to filter out nothing) is what
+  ends up stored.  Those placeholders are marked so a later index could fill
+  them in, but `xset index areas` skipped every area whose key already
+  existed, placeholder or not — even though the level range it needed was
+  sitting right there in the game's own answer to the command it had just
+  sent.  It now fills in a placeholder from that answer instead of skipping
+  it; a genuinely complete row (from `areas.json`, or an earlier index) is
+  still left untouched.  Existing installs: run `xset index areas` once to
+  fix any placeholders already sitting in your database.
+  Reported by **Obyron**, who had a level 10 campaign for 'the behir' in
+  'Cell' come back with Horath — a level 150+ area — listed ahead of New
+  Thalos, because every candidate area's stored range was 1-201.
+
+- **Fixed: an express campaign or gquest target routed to the area entrance
+  whenever the area had a maze anywhere in it, even nowhere near the
+  target.**  The check was "does this area contain a registered maze room",
+  not "is the target's own room one" — so a target well before a maze got
+  the same fallback treatment as one behind it. Only a target whose own room
+  is flagged with `xset maze` is affected now; everything else routes
+  straight there as normal.  See `xset maze` and `xset rlink` in `xhelp` for
+  how the two work together — `xset rlink` is what to use when a target's
+  specific room really is behind a maze and you want it reached directly.
+  Reported by **Cephrael**.
+
+- **Fixed: the quest tab could steal focus from an in-progress campaign or
+  global quest for no reason.**  Any quest-related GMCP update forced the
+  miniwindow to the quest tab — including the ones that are pure background
+  bookkeeping, like the quest cooldown timer simply reaching zero again, with
+  no action from you.  That now only switches tabs when you are not
+  currently mid-campaign or mid-gquest; being on either leaves your tab
+  alone.  Reported by **Selitos**.
+
+- **`xcp` now brings the miniwindow tab with it.**  It already retargeted to
+  the next campaign or gquest mob after a kill; the visible tab did not
+  follow, and could be left showing quest — including from the fix directly
+  above.  Every `xcp` navigation now switches to the CP or GQ tab to match
+  what it is actually working.  Reported by **Spoke**.
+
+- **`xhelp xg` described the wrong thing.**  It said `xg refresh` redraws
+  from memory and `xg reload` resets window layout.  Neither is what the
+  aliases actually do: both act on whichever of campaign or gquest is
+  running, `refresh` re-sending the check and `reload` the fuller info
+  request — real trips to the game, not a local redraw.  Corrected, and
+  cross-referenced from the new [R] button below, which is the same
+  `reload` action as a click.
+
 - **Fixed: mob names with a hyphen or apostrophe could get a keyword that
   does not include it.**  `half-griffon` could end up with a stored keyword
   of just `griffon`, `y'atora` could lose the apostrophe — and Aardwolf
@@ -20,7 +112,7 @@
   genuinely omit the character are left alone.  `xset kw fix` repeats the
   same check by hand, for anything set since.
 
-  Reported by **Arcylix**.
+  Reported by **Crowley**.
 
 - **`snd update` reloaded twice.**  Modules and the plugin file are fetched by
   two independent paths, and both reloaded: the module path reloaded as soon as
@@ -36,7 +128,7 @@
   for both, or hands it back.  A module-only update still reloads, including
   when the plugin file cannot be reached.
 
-  Reported by **Arcylix**.
+  Reported by **Crowley**.
 
 - **Fixed: room targets could all come out red, unclickable, and with no
   area.**  Two separate causes, both of which threw away rooms the plugin
@@ -119,6 +211,22 @@
 
 ## New
 
+- **A [R] title-bar button re-fetches CP/GQ info with a click.**  v5 had a
+  button for this; v6 only had the typed commands (`xg reload` / `xgui
+  reload`).  Shown on the CP and GQ tabs, it acts on whichever one is
+  showing — particularly useful on a room GQ, where stale info is easy to
+  end up looking at.  Requested by **Selitos**.
+
+- **The quest tab flashes instead of stealing focus.**  A quest event mid-
+  campaign or mid-gquest (a new target, a kill, the cooldown becoming ready
+  again) no longer switches you away from the CP/GQ tab you're working — see
+  the bug fix above — but you should still notice something happened. The
+  quest tab now flashes a configurable color (**Quest Ready Flash** in `snd
+  settings`, default orange) for about 5 seconds instead, and only when the
+  quest tab is not already the one showing.  Switching to it yourself, by
+  click or by command, stops the flash immediately.  Requested by
+  **Selitos**.
+
 - **`xset kw list [<area>]` — see the keywords you have.**
   There was no way to look at your own keyword overrides.  If you carried some
   forward from an earlier version, nothing could tell you whether they had
@@ -134,6 +242,20 @@
   unused the answer is in the mapper's data, and this prints it — every portal
   the mapper knows, its level requirement, and whether you clear that at your
   level plus ten per tier.  `xtest portals <area>` narrows it.
+
+- **A loud warning when the whole repository got installed instead of the
+  release archive.**  Downloading the repo (`git clone`, or GitHub's green
+  *Code → Download ZIP*) and extracting that into the plugins folder is not
+  the supported install method, and two people have already had a confusing
+  time of it that way — one saw MUSHclient become unresponsive, another saw
+  errors that looked like the plugin itself was broken.  On load, the plugin
+  now checks for files the release archive never ships (`README.md`,
+  `DESIGN.md`, `manifest.json`, `CREDIT.md`) sitting next to it, and if it
+  finds any, says so immediately and names the fix — rather than leaving
+  someone watching a silent client and guessing.  This cannot repair a bad
+  install by itself; there is nothing safe a plugin's own script can do about
+  files already sitting beside it before that script has run. But it replaces
+  the guessing with a plain answer.
 
   It is also explicit about the two ways that data is thin: a portal the
   mapper has never watched you use is not recorded at all — an alias of your

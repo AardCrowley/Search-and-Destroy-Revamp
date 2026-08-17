@@ -285,16 +285,27 @@ function ht_continue()
 end
 
 -- Trigger: hunt arrived at target — run qw to pin-point room.
+--
+-- ht_reset() runs BEFORE the qw call, not after. Reported by MiSolo: a hunt
+-- trick that escalated past index 1 (several same-named mobs) would send its
+-- 'where N.mob' and then immediately cancel it. ht_reset() sends 'stop' when
+-- ht.index > 1, to drop any of the hunt trick's own outstanding 'hunt N.mob'
+-- replies still queued server-side (the same reasoning as qw_reset() -- see
+-- its comment) -- but 'stop' clears the MUD's whole pending queue, not just
+-- hunt commands, so running it AFTER qw_exact() had already sent 'where'
+-- canceled that too, every time the hunt trick had escalated even once.
+-- ix is captured into a local before the reset either way, so reordering
+-- costs nothing: qw_exact()/qw_arg() never read ht.index directly.
 function ht_complete(name, line, wildcards)
     EnableTriggerGroup("AutoHunt", false)
     local ix = ht.index or 1
+    ht_reset()
     if has_activity_target() then
         qw.index = ix
         qw_exact()
     elseif has_target() then
         qw_arg(ix, current_target.keyword)
     end
-    ht_reset()
 end
 
 -- Trigger: hunt failed.

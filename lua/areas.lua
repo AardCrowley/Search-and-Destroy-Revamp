@@ -992,6 +992,7 @@ end
 local function _areas_index_process(captured_styles, silent)
     local db = db_open()
     local inserted = 0
+    local enriched = 0
     local skipped  = 0
 
     local ok, err = pcall(function()
@@ -1012,8 +1013,40 @@ local function _areas_index_process(captured_styles, silent)
                         "0" ..
                         ")"
                     )
-                    if db:changes() > 0 then inserted = inserted + 1
-                    else                      skipped  = skipped  + 1 end
+                    if db:changes() > 0 then
+                        inserted = inserted + 1
+                    else
+                        -- Already present. Migrating mob/keyword data ahead of
+                        -- an area being indexed leaves a bare 'stub' row behind
+                        -- (key + name only, so the FK those tables reference is
+                        -- satisfied) -- source='stub', level range whatever the
+                        -- schema defaults to (1-201), never the area's real
+                        -- range. The command that just ran carries the game's
+                        -- own answer for this area in `a`, so a stub is the one
+                        -- case worth overwriting; anything already real --
+                        -- 'json' from areas.json, or a prior 'scrape' -- is
+                        -- left alone, same as before.
+                        local was_stub = false
+                        for row in db:nrows(
+                            "SELECT source FROM areas WHERE key=" .. fixsql(a.key) .. " LIMIT 1"
+                        ) do
+                            was_stub = (row.source == "stub")
+                        end
+                        if was_stub then
+                            db:exec(
+                                "UPDATE areas SET name=" .. fixsql(a.name) ..
+                                ", minlvl=" .. a.min_l ..
+                                ", maxlvl=" .. a.max_l ..
+                                ", lock="   .. a.lock ..
+                                ", noquest=" .. a.noquest ..
+                                ", source='scrape'" ..
+                                " WHERE key=" .. fixsql(a.key)
+                            )
+                            enriched = enriched + 1
+                        else
+                            skipped = skipped + 1
+                        end
+                    end
                 end
             end
         end)
@@ -1029,20 +1062,26 @@ local function _areas_index_process(captured_styles, silent)
     build_area_name_xref()
 
     if not silent then
-        if inserted > 0 then
+        if inserted > 0 or enriched > 0 then
             InfoNote(string.format(
-                "SnD: Area index — %d new area(s) added, %d already known.", inserted, skipped))
+                "SnD: Area index — %d new area(s) added, %d filled in from a " ..
+                "stub, %d already known.", inserted, enriched, skipped))
         else
             InfoNote("SnD: Area index — no new areas found (all already in database).")
         end
-    elseif inserted > 0 then
-        InfoNote(string.format("SnD: Auto-indexed %d new area(s).", inserted))
+    elseif inserted > 0 or enriched > 0 then
+        InfoNote(string.format(
+            "SnD: Auto-indexed %d new area(s), filled in %d stub(s).", inserted, enriched))
     end
 end
 
 -- Alias handler: 'xset index areas' or 'xset index <zone>'
--- Sends 'areas keywords 0 300' (or 'areas keywords <zone>') and inserts
--- any areas not yet in the database.  Existing entries are not overwritten.
+-- Sends 'areas keywords 0 300' (or 'areas keywords <zone>') and inserts any
+-- areas not yet in the database.  A bare 'stub' row (key + name only, no
+-- real level range -- see migration_step3_mobs/step4 in db.lua) is filled in
+-- from this command's answer, since that is exactly the data a stub is
+-- waiting on.  Any other existing entry -- from areas.json, or a prior run
+-- of this command -- is left untouched.
 function xset_index_areas(name, line, wildcards)
     local target = Trim((wildcards and (wildcards.target or wildcards[1])) or "")
     local cmd

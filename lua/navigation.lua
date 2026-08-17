@@ -547,6 +547,16 @@ function xcp_goto_target(index)
         return
     end
 
+    -- Reported by Spoke: xcp already retargets to the next CP/GQ mob on its
+    -- own after a kill, but the miniwindow tab did not follow -- it stayed
+    -- wherever it was (often 'quest', if a quest event had switched it away
+    -- in the meantime). Every xcp navigation, however it got here below, is
+    -- unambiguously "working the CP or GQ list", so the tab should say so.
+    if type(xg_set_active_tab) == "function"
+    and (current_activity == "cp" or current_activity == "gq") then
+        xg_set_active_tab(current_activity)
+    end
+
     if xcp_retry_stat ~= 0 then
         set_target_from_main_target_list(index)
         xcp_index_attempt = index
@@ -637,24 +647,23 @@ function xcp_goto_target(index)
 
     if express then
         -- Express: go directly to the highest-kill room.
-        -- Exception: if the target's area is a maze area, the specific roomid
-        -- is inside the maze and unreachable by normal navigation.  Fall back to
-        -- routing to the area start room so the player arrives at the maze
-        -- entrance and can navigate manually.
-        -- Also fall back when no specific roomid is recorded.
+        -- Exception: if the specific room itself is a registered maze
+        -- entrance/interior, it is unreachable by normal navigation (maze
+        -- exits shuffle in-game). Fall back to routing to the area start room
+        -- so the player arrives at the maze entrance and can navigate
+        -- manually. Also fall back when no specific roomid is recorded.
+        --
+        -- This used to check whether the target's AREA contained a maze room
+        -- anywhere, not whether the target's own room was one -- so any
+        -- express target sharing an area with a maze, however far from it,
+        -- was routed to the area entrance instead of straight to its own
+        -- room. is_maze_room() (areas.lua) is the per-room check pathing.lua
+        -- already uses for the same distinction; this now matches it.
         local use_area_fallback = false
         if not t.roomid or tonumber(t.roomid) == nil or tonumber(t.roomid) == 0 then
             use_area_fallback = true
-        else
-            -- Check if the target's area contains maze rooms.
-            if type(mazeStartRooms) == "table" and t.arid then
-                for _, v in pairs(mazeStartRooms) do
-                    if type(v) == "table" and v.areaname == t.arid then
-                        use_area_fallback = true
-                        break
-                    end
-                end
-            end
+        elseif type(is_maze_room) == "function" and is_maze_room(t.roomid) then
+            use_area_fallback = true
         end
 
         if use_area_fallback then
@@ -757,6 +766,12 @@ function xcp_noarg()
         return
     end
 
+    -- On both a campaign and a gquest: act on whichever the player is
+    -- actually looking at, not whichever was checked last (targets.lua).
+    if type(reconcile_activity_with_focused_tab) == "function" then
+        reconcile_activity_with_focused_tab()
+    end
+
     if current_activity == "none" then
         -- "not on a CP or GQ" is true but unhelpful when the player IS on a
         -- quest: quest targeting is opt-in, and nothing said so. Point at the
@@ -789,6 +804,16 @@ end
 -- xcp <index> alias handler.
 function xcp_arg(name, line, wildcards)
     local index = tonumber(wildcards.index)
+
+    -- On both a campaign and a gquest: act on whichever the player is
+    -- actually looking at, not whichever was checked last (targets.lua).
+    -- Row clicks route through this alias too (snd_row_click, window.lua),
+    -- so this also covers clicking a row on the tab that current_activity
+    -- doesn't currently agree with.
+    if type(reconcile_activity_with_focused_tab) == "function" then
+        reconcile_activity_with_focused_tab()
+    end
+
     if current_activity == "none" then
         if type(has_active_quest) == "function" and has_active_quest() then
             InfoNote("\nSnD: 'xcp' only handles quest targets when quest " ..

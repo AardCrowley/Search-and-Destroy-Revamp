@@ -61,7 +61,7 @@ local TOPICS = {
             },
             {
                 heading = "xset win  max / expand  |  min / collapse",
-                text    = "Expands or collapses the window between its normal and minimized state.",
+                text    = "'min'/'collapse' rolls the window up to just beneath the tab and TNL bar -- the target list and status bar are hidden, tabs and TNL/NX status stay visible -- and remembers the height it was at. 'max'/'expand' restores that height. This is not the 'Auto-Expand List' setting from the right-click menu, which controls whether the target list itself grows to fit its content or scrolls at a fixed height; the two are independent.",
             },
             {
                 heading = "xset winreset",
@@ -71,8 +71,16 @@ local TOPICS = {
                 heading = "xset fontsize  |  xset linespace",
                 text    = "Both are reminders rather than settings. Font size in the targets window is controlled by MUSHclient itself: right-click the window's title bar and choose 'Change Font'. Line spacing follows from the font you pick and is not separately adjustable.",
             },
+            {
+                heading = "Title bar buttons",
+                text    = "[x] hides the window, same as 'xset win off'. [R], shown on the CP and GQ tabs only, re-fetches that tab's info from the game -- the same as 'xg reload' as a click. There is nothing to re-fetch on the quest tab, which stays current on its own, so no button is shown there.",
+            },
+            {
+                heading = "The quest tab flashing",
+                text    = "A quest event (a new target, a kill, the cooldown becoming ready again) no longer switches you away from an in-progress campaign or gquest -- but the quest tab still briefly flashes a configurable color ('Quest Ready Flash' in 'snd settings') for about 5 seconds so it isn't missed. Switching to the quest tab yourself, by click or by command, stops the flash immediately.",
+            },
         },
-        see_also = { "silent", "sound" },
+        see_also = { "silent", "sound", "xg" },
     },
 
     {
@@ -180,6 +188,10 @@ local TOPICS = {
         summary  = "Configure room links that annotate the CP/GQ target list.",
         sections = {
             {
+                heading = "When you need one",
+                text    = "Most areas need no rlink at all, including most maze areas — only when a campaign or gquest names a SPECIFIC room the mapper cannot route to (most often one behind or inside a maze; see 'xset maze') does routing need help. Without a link, S&D falls all the way back to the area's start room for that target. A link gives it a substitute: room1 is the room that's actually hard to reach (the target's own room), room2 is a room the mapper CAN path to — typically the maze's entrance room itself. S&D then routes to room2 by mapper distance and treats you as arrived at room1 from there, on foot.",
+            },
+            {
                 heading = "xset rlink",
                 text    = "Lists all configured room links.",
             },
@@ -192,7 +204,7 @@ local TOPICS = {
                 text    = "Adds or updates a link with an annotation note.  The note appears in curly braces next to any CP/GQ target whose shortest path passes through this link — useful for marking maze entrances, portal rooms, or other notable traversals.",
             },
         },
-        see_also = { "xm|xmall|rlh", "xcp" },
+        see_also = { "xm|xmall|rlh", "xcp", "xset maze" },
     },
 
     -- ── NAVIGATION ──────────────────────────────────────────────────────────
@@ -521,6 +533,10 @@ local TOPICS = {
             {
                 text = "Without an argument, navigates to the first un-killed mob in the miniwindow list.  With an index number, goes to that specific target.  The action taken after arriving (hunt, where, nothing) is set by 'xcp mode'.",
             },
+            {
+                heading = "On both a campaign and a gquest",
+                text    = "'xcp' handles both, but there is only the one command -- it acts on whichever you last ran a check or info command for.  If you are running both at once and that isn't the one you meant, switch to its tab in the miniwindow first (or click a target row there); S&D notices the mismatch and switches to match before acting.",
+            },
         },
         see_also = { "xcp mode", "xcp quest", "cp|gq" },
     },
@@ -770,6 +786,10 @@ local TOPICS = {
                 text = "Toggles the current room as the entrance to a maze-type area.  When a mob is found in a room with the same name as a registered maze entrance, that maze room is sorted to the top of your search results — so S&D sends you to the correct starting point instead of a random room with that name.",
             },
             {
+                heading = "It also changes how that ONE room routes",
+                text    = "A maze's exits shuffle in-game, so the mapper's distance data through a flagged room is not trustworthy for planning a route. A campaign or gquest target whose specific room IS a flagged maze room is routed to the area's start room instead of walked to directly. This only applies to the flagged room itself — a target well before the maze, in the same area, still routes straight there. If a target genuinely needs to go to a specific room behind a maze, set up 'xset rlink' for it instead of flagging more rooms here.",
+            },
+            {
                 heading = "xset maze list",
                 text    = "Prints all saved maze entrances with their room ID, zone key, and area name.",
             },
@@ -778,7 +798,7 @@ local TOPICS = {
                 text    = "Removes the maze entrance record for the given room ID from the database.",
             },
         },
-        see_also = { "xset mark", "xset area" },
+        see_also = { "xset mark", "xset area", "xset rlink" },
         new_in   = "v6",
     },
 
@@ -938,11 +958,15 @@ local TOPICS = {
         summary  = "Import area data from the MUD into the S&D database.",
         sections = {
             {
-                text = "Sends 'areas keywords 0 300' (or 'areas keywords <zone>' for a single area) to the MUD and inserts any areas not yet in the S&D database.  Existing entries are never overwritten.  Newly added areas get a start room of -1; use 'xset mark' once you visit the area to set the correct start room.",
+                text = "Sends 'areas keywords 0 300' (or 'areas keywords <zone>' for a single area) to the MUD and inserts any areas not yet in the S&D database.  Newly added areas get a start room of -1; use 'xset mark' once you visit the area to set the correct start room.",
+            },
+            {
+                heading = "Fixing a wrong level range",
+                text    = "Mob or keyword data brought in from an earlier version can reference an area before it has ever been indexed. When that happens a placeholder row is created just to hold the area's key and name, with no real level range -- which defaults to 1-201, wide enough to never filter anything out. Room-name matches then can't tell your area apart from every other one sharing that room name. Running this command fills the real range in for any such placeholder; areas that already have real data (from areas.json or a previous run) are left as they are.",
             },
             {
                 heading = "Auto-detection",
-                text    = "S&D also auto-indexes unknown zones as you move through the world — no manual command needed.  Use 'xset index areas' for a bulk import when you first install, or after a game update adds new areas.",
+                text    = "S&D also auto-indexes unknown zones as you move through the world — no manual command needed.  Use 'xset index areas' for a bulk import when you first install, or after a game update adds new areas, or to fix placeholder ranges left behind by a version upgrade.",
             },
         },
         see_also = { "xset mark", "xset area", "ms" },
@@ -1317,17 +1341,17 @@ local TOPICS = {
         },
         category = "Window & Display",
         syntax   = {
-            "xg refresh    (redraw the miniwindow without reloading data)",
-            "xg reload     (reload window UI state and redraw)",
+            "xg refresh    (re-run 'campaign check' / 'gquest check')",
+            "xg reload     (re-fetch 'cp info' / 'gq info' from the game)",
         },
-        summary  = "Refresh or reload the S&D miniwindow.",
+        summary  = "Re-run a campaign or gquest check/info, whichever is active.",
         new_in   = "v6",
         sections = {
             {
-                text = "Use 'xg refresh' when the miniwindow display looks garbled or out of date — it redraws all panels from current in-memory data without re-querying the database.  Use 'xg reload' when the window layout itself needs to be reset (e.g. after changing font or size settings).",
+                text = "Both act on whichever of campaign or global quest is currently running (current_activity), so there is one command either way rather than a separate cp/gq version to remember.  'xg refresh' re-sends the check (what you would get from 'cp check' / 'gquest check').  'xg reload' re-sends the fuller info request (what you would get from 'cp info' / 'gq info'), which is the one worth reaching for when the target list itself looks stale or wrong.  The [R] button in the miniwindow's title bar is the same 'reload' action as a click, for whichever tab is showing.",
             },
         },
-        see_also = { "win" },
+        see_also = { "win", "xset rlink" },
     },
 
     {

@@ -448,6 +448,37 @@ function build_main_target_list(cp_or_gq, area_or_room)
     print_target_links(main_target_list)
 end
 
+-- If the player is on both a campaign and a gquest, current_activity only
+-- reflects whichever was checked most recently (do_cp_check/do_cp_info vs.
+-- do_gq_check/do_gq_info) -- not which one the player is looking at, or
+-- means by a bare 'xcp'. main_target_list is a single shared list that gets
+-- overwritten by whichever was checked last, so a player working both could
+-- type 'xcp' meaning their campaign target and be walked to their gquest
+-- target instead, silently.
+--
+-- When that disagreement exists, this switches current_activity to match
+-- whichever tab is actually showing and rebuilds main_target_list for it --
+-- area_room_type_check() is a pure read of the campaign/gquest TYPE from its
+-- own preserved info list (cp_info_list / gq_info_list, never overwritten by
+-- the other activity), so no extra state has to be tracked to make this
+-- possible. Only relevant when both are active; an unambiguous single
+-- activity, or a focused tab that already agrees, is left untouched.
+function reconcile_activity_with_focused_tab()
+    if player_on_cp ~= "yes" or player_on_gq ~= "yes" then return end
+    if type(xg_get_active_tab) ~= "function" then return end
+    local tab = xg_get_active_tab()
+    if tab ~= "cp" and tab ~= "gq" then return end   -- quest tab: no opinion
+    if tab == current_activity then return end
+
+    local info_list    = (tab == "gq") and gq_info_list or cp_info_list
+    local area_or_room = area_room_type_check(info_list)
+    current_activity = tab
+    InfoNote("SnD: you're on both a campaign and a global quest -- using ",
+             "your ", (tab == "gq") and "GQ" or "CP",
+             " view since that's the tab you have open.")
+    build_main_target_list(tab, area_or_room)
+end
+
 -- Build a target list using area-level lookups (area CP or dead mobs).
 function build_area_targets(cp_gq)
     local list = (cp_gq == "cp") and cp_check_list or gq_check_list
@@ -1811,7 +1842,23 @@ function quest_status_gmcp(q)
     end
 
     if type(quest_timer_tick)    == "function" then quest_timer_tick() end
-    if type(xg_set_active_tab)   == "function" then xg_set_active_tab("quest") end
+
+    -- Reported by Selitos: the quest timer popping (the cooldown simply
+    -- becoming ready again, with no action from the player) yanked the
+    -- miniwindow away from the GQ tab mid-global -- and there is nothing new
+    -- to look at on the quest tab from a background event like that, so
+    -- there is nothing gained by switching. The quest_target data above is
+    -- still updated either way; only the forced tab switch is suppressed,
+    -- and only while a campaign or gquest is actually in progress. A player
+    -- not currently on either still gets the old behaviour.
+    local mid_activity = (player_on_cp == "yes") or (player_on_gq == "yes")
+    if mid_activity then
+        -- Can't switch the tab away from cp/gq, but the player should still
+        -- notice something happened on the quest tab -- flash it instead.
+        if type(xg_flash_quest_tab) == "function" then xg_flash_quest_tab() end
+    elseif type(xg_set_active_tab) == "function" then
+        xg_set_active_tab("quest")
+    end
     if type(xg_draw_window)      == "function" then xg_draw_window() end
 end
 

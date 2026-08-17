@@ -63,6 +63,8 @@ local SP_DEFS = {
       key = "color_tab_cp",          label = "CP Tab Line",                type = "color",  is_global = true, default = "" },
     { cat = "Colors -- Tabs",
       key = "color_tab_gq",          label = "GQ Tab Line",                type = "color",  is_global = true, default = "" },
+    { cat = "Colors -- Tabs",
+      key = "color_tab_flash",       label = "Quest Ready Flash",          type = "color",  is_global = true, default = "#FFA500" },
     { cat = "Colors -- Targets",
       key = "color_normal",          label = "Normal",                     type = "color",  is_global = true, default = "#E0E0E0" },
     { cat = "Colors -- Targets",

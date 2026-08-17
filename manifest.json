@@ -28,8 +28,8 @@
     },
     {
       "file": "areas.lua",
-      "hash": "1696be7a",
-      "size": 42136
+      "hash": "ac26b726",
+      "size": 44334
     },
     {
       "file": "mobs.lua",
@@ -43,8 +43,8 @@
     },
     {
       "file": "targets.lua",
-      "hash": "2728f200",
-      "size": 76188
+      "hash": "06fda61e",
+      "size": 78861
     },
     {
       "file": "pathing.lua",
@@ -58,13 +58,13 @@
     },
     {
       "file": "navigation.lua",
-      "hash": "91a95500",
-      "size": 58800
+      "hash": "1cc3f900",
+      "size": 60271
     },
     {
       "file": "hunting.lua",
-      "hash": "947ce19c",
-      "size": 15507
+      "hash": "f8502928",
+      "size": 16264
     },
     {
       "file": "scanning.lua",
@@ -78,18 +78,18 @@
     },
     {
       "file": "window.lua",
-      "hash": "3f29161a",
-      "size": 71922
+      "hash": "973ff4ba",
+      "size": 79195
     },
     {
       "file": "settings_popup.lua",
-      "hash": "cf09e998",
-      "size": 24360
+      "hash": "0c006ba0",
+      "size": 24523
     },
     {
       "file": "help.lua",
-      "hash": "feaf33ea",
-      "size": 89488
+      "hash": "c3b1c3a8",
+      "size": 93549
     },
     {
       "file": "changelog.lua",

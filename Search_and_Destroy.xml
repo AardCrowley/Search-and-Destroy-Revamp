@@ -28,6 +28,12 @@
 
         <timer name="quest_timer" script="quest_timer_tick" second="1" enabled="y" send_to="12"></timer>
 
+        <!-- Off until a quest event fires while the quest tab is not active
+             (see xg_flash_quest_tab in window.lua); ticks the quest tab
+             between normal and the flash color for 5 seconds, then disables
+             itself. Starting disabled means idle players pay nothing for it. -->
+        <timer name="quest_flash_timer" script="quest_flash_tick" second="1" enabled="n" send_to="12"></timer>
+
         <!-- Status tick timer removed: per-second Repaint() competed with scroll
              repaints and caused jumpy scrolling.  Elapsed display was removed;
              "Last" updates at natural redraw cadence instead. -->
@@ -38,6 +44,76 @@
 
     <script>
     <![CDATA[
+-- ─── WRONG INSTALL METHOD CHECK ────────────────────────────────────────────────
+--
+-- Some people download the whole repository (git clone, or GitHub's green
+-- "Code -> Download ZIP" button) and extract that into their plugins folder,
+-- instead of the release archive from the Releases page. The result sits
+-- right beside Search_and_Destroy.xml: a source checkout's own files --
+-- README.md, DESIGN.md, manifest.json, CREDIT.md -- none of which the release
+-- archive carries (tests/release_archive_test.lua pins the exact list it
+-- ships: the plugin, sounds/, and snd_modules/, nothing else).
+--
+-- Nothing about that layout is unrecoverable on its own -- the module loader
+-- further down already refuses to treat a bare lua/ folder as a source of
+-- modules unless a .dev marker says otherwise, so a fresh install still
+-- resolves and downloads its real modules into snd_modules/ regardless. But
+-- two people have already had a confusing time of it this way: one saw
+-- MUSHclient become unresponsive, another saw errors severe enough to look
+-- like the plugin was broken. There is nothing safe for a plugin's own script
+-- to do about files already sitting beside it before that script has even
+-- run -- but it can say, immediately and unmistakably, what happened and how
+-- to fix it, rather than leaving someone watching a silent client guess.
+--
+-- Deliberately the very first thing this script does, and wrapped so a
+-- problem here cannot itself take the rest of the script down with it.
+local _SND_SOURCE_ONLY_MARKERS = {
+    "README.md", "DESIGN.md", "manifest.json", "CREDIT.md",
+}
+
+local function _snd_check_wrong_install()
+    local base = GetPluginInfo(GetPluginID(), 20)
+    local found = {}
+    for _, name in ipairs(_SND_SOURCE_ONLY_MARKERS) do
+        local f = io.open(base .. name, "r")
+        if f then
+            f:close()
+            found[#found + 1] = name
+        end
+    end
+    if #found == 0 then return end
+
+    ColourNote("white", "darkred",
+        "+=================================================================+")
+    ColourNote("white", "darkred",
+        " SnD: this looks like the full source repository, not the release")
+    ColourNote("white", "darkred",
+        " archive -- found " .. table.concat(found, ", ") .. " next to the plugin.")
+    ColourNote("silver", "",
+        " Downloading the whole repository (git clone, or GitHub's green")
+    ColourNote("silver", "",
+        " 'Code -> Download ZIP' button) is not the supported install method,")
+    ColourNote("silver", "",
+        " and has left at least one player with an unresponsive MUSHclient.")
+    ColourNote("silver", "",
+        " To fix it: close MUSHclient, delete this plugin's folder, download")
+    ColourNote("silver", "",
+        " the release .zip from the Releases page instead, and extract THAT")
+    ColourNote("silver", "",
+        " into your plugins folder. Your saved data (SnDdb.db) lives")
+    ColourNote("silver", "",
+        " elsewhere and is not affected either way.")
+    ColourNote("white", "darkred",
+        "+=================================================================+")
+end
+
+do
+    local ok, err = pcall(_snd_check_wrong_install)
+    if not ok then
+        ColourNote("white", "red", "SnD: install check failed: " .. tostring(err))
+    end
+end
+
 dofile(GetInfo(60) .. "aardwolf_colors.lua")
 
 require "movewindow"
@@ -469,17 +545,33 @@ function player_is_on_cp()
     player_on_cp = "yes"
 end
 
+-- 'cp check' only reports "You have completed N campaign(s) today" while the
+-- player is NOT currently on a campaign (see on_cp_check_captured,
+-- targets.lua) -- Aardwolf simply does not include that line in the
+-- response otherwise. So the count only ever advanced if the player happened
+-- to run 'cp check' by hand between campaigns, which is what "you manually
+-- type cp today" was standing in for. Reported by Spoke.
+--
+-- player_not_on_cp() puts the player into exactly the state that line
+-- appears in, both after a completion and after a quit, so a check right
+-- after either is the one moment a background refresh can reliably see it.
+local function refresh_cp_today()
+    if type(do_cp_check) == "function" then do_cp_check() end
+end
+
 function do_cp_complete(name, line, wildcards)
     DebugNote("Campaign complete")
     -- Delay by 0.5s to allow the daily-bonus trigger to fire first.
     DoAfterSpecial(0.5, [[ history_end(HISTORY_TYPE_CP, HISTORY_STATUS_COMPLETE) ]], 12)
     player_not_on_cp()
+    refresh_cp_today()
 end
 
 function do_cp_quit()
     DebugNote("Campaign quit")
     history_end(HISTORY_TYPE_CP, HISTORY_STATUS_FAILED)
     player_not_on_cp()
+    refresh_cp_today()
 end
 
 function cp_check_can_get_new_cp()

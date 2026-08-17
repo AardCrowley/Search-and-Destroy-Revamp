@@ -59,6 +59,11 @@ local _width            = DEFAULT_W
 local _col_fixed_w      = nil
 local _height           = DEFAULT_H
 local _min_expand_h     = DEFAULT_H   -- floor for expand-mode shrink; updated on manual resize
+
+-- 'xset win max|expand' / 'min|collapse': whether the window is rolled up
+-- to just beneath the info (TNL) bar, and the height to restore on expand.
+local _collapsed        = false
+local _pre_collapse_h   = nil
 local _screen_w         = 0
 local _screen_h         = 0
 local _scale            = 1.0
@@ -70,6 +75,14 @@ local _gq_list          = {}
 local _active_tab       = "quest"
 local _scroll_offset    = { cp = 0, gq = 0 }
 local _scrollbar        = nil
+
+-- Quest tab flash: set by xg_flash_quest_tab() when a quest event fires
+-- while the player is looking at cp/gq (see quest_status_gmcp in targets.lua,
+-- which no longer forces the tab switch mid-activity, and calls this instead
+-- so the event is still noticed). _quest_flash_until is an os.time() deadline;
+-- quest_flash_timer ticks _quest_flash_on between draws until that passes.
+local _quest_flash_until = nil
+local _quest_flash_on    = false
 
 local _active_font_name = ""
 local _active_font_size = 0
@@ -95,11 +108,50 @@ local redraw_list_area
 
 -- ─── PUBLIC INTERFACE ────────────────────────────────────────────────────────
 
+-- Which tab is currently showing. Used by xcp (navigation.lua) to decide
+-- which activity a bare 'xcp' means when the player is on both a campaign
+-- and a gquest at once and current_activity (whichever was checked last)
+-- does not agree with what they are actually looking at.
+function xg_get_active_tab()
+    return _active_tab
+end
+
 function xg_set_active_tab(tab)
     if tab == "cp" or tab == "gq" or tab == "quest" then
         _active_tab = tab
+        if tab == "quest" then xg_stop_quest_flash() end
         xg_draw_window()
     end
+end
+
+-- Called when a quest event fires but the tab switch to it was suppressed
+-- because the player is mid-campaign or mid-gquest (quest_status_gmcp,
+-- targets.lua). A no-op if the quest tab is already showing -- there is
+-- nothing to draw attention to that isn't already on screen.
+function xg_flash_quest_tab()
+    if _active_tab == "quest" then return end
+    _quest_flash_until = os.time() + 5
+    _quest_flash_on    = true
+    if type(EnableTimer) == "function" then EnableTimer("quest_flash_timer", true) end
+    xg_draw_window()
+end
+
+-- Called by quest_flash_timer (every second) to alternate the tab color, and
+-- by xg_stop_quest_flash to cut it short (e.g. the player clicked the tab
+-- themselves, or switched some other way -- see xg_set_active_tab above).
+function xg_stop_quest_flash()
+    _quest_flash_until = nil
+    _quest_flash_on    = false
+    if type(EnableTimer) == "function" then EnableTimer("quest_flash_timer", false) end
+end
+
+function quest_flash_tick()
+    if not _quest_flash_until or os.time() >= _quest_flash_until then
+        xg_stop_quest_flash()
+    else
+        _quest_flash_on = not _quest_flash_on
+    end
+    xg_draw_window()
 end
 
 function xg_update_target_list(activity, list)
@@ -423,10 +475,14 @@ local function draw_tab_bar(tab_top, tab_bot)
     for i, tab in ipairs(vtabs) do
         local tx1   = PAD_LEFT + (i - 1) * tab_w
         local tx2   = (i == #vtabs) and (_width - PAD_RIGHT - 1) or (tx1 + tab_w - 2)
-        local active = (_active_tab == tab.key)
+        local active   = (_active_tab == tab.key)
+        local flashing = (tab.key == "quest") and (not active) and _quest_flash_on
 
-        WindowRectOp(win, 2, tx1, tab_top + 2, tx2, tab_bot - 1,
-            active and Theme.PRIMARY_BODY or Theme.SECONDARY_BODY)
+        local bg = active and Theme.PRIMARY_BODY or Theme.SECONDARY_BODY
+        if flashing then
+            bg = ColourNameToRGB(snd_get_setting("color_tab_flash", "#FFA500"))
+        end
+        WindowRectOp(win, 2, tx1, tab_top + 2, tx2, tab_bot - 1, bg)
 
         if active then
             WindowLine(win, tx1 + 1, tab_top + 2, tx2 - 1, tab_top + 2,
@@ -1097,6 +1153,49 @@ local function draw_content()
     end
 end
 
+-- ─── TITLE BAR BUTTONS ────────────────────────────────────────────────────────
+
+-- [x] close, and [R] info-reset, painted on top of the title bar chrome.
+--
+-- [R] re-fetches CP/GQ info from the game. v5 had a button for this; v6 only
+-- had the typed commands ('xg reload' / 'xgui reload'). Reported missing by
+-- Selitos -- particularly useful on a room GQ, where stale info is easy to
+-- end up looking at. Acts on whichever tab is active, the same way the typed
+-- commands already split on cp/gq; nothing to reset on the quest tab, which
+-- stays current on its own via GMCP, so the button is hidden there.
+local function draw_title_bar_buttons()
+    local body_top = geometry()
+    local lh        = font_line_h()
+    local btn_y     = math.max(0, math.floor((body_top - lh) / 2))
+
+    local close_str = "[x]"
+    local close_w   = WindowTextWidth(win, FONT_ID, close_str) + 4
+    local close_x   = _width - close_w - 2
+    WindowText(win, FONT_ID, close_str, close_x, btn_y, 0, 0, 0xAAAAAA, false)
+    WindowDeleteHotspot(win, "snd_close_btn")
+    WindowAddHotspot(win, "snd_close_btn",
+        close_x - 1, 0, _width - 1, body_top,
+        "", "", "", "", "xg_hide_window",
+        "Hide window  (right-click title bar or tabs to restore)",
+        miniwin.cursor_hand, 0)
+
+    if _active_tab == "cp" or _active_tab == "gq" then
+        local reset_str = "[R]"
+        local reset_w   = WindowTextWidth(win, FONT_ID, reset_str) + 4
+        local reset_x   = close_x - reset_w - 4
+        WindowText(win, FONT_ID, reset_str, reset_x, btn_y, 0, 0, 0xAAAAAA, false)
+        WindowDeleteHotspot(win, "snd_info_reset_btn")
+        WindowAddHotspot(win, "snd_info_reset_btn",
+            reset_x - 1, 0, reset_x + reset_w + 1, body_top,
+            "", "", "", "", "snd_info_reset_click",
+            "Re-fetch " .. (_active_tab == "cp" and "campaign" or "global quest") ..
+                " info from the game",
+            miniwin.cursor_hand, 0)
+    else
+        WindowDeleteHotspot(win, "snd_info_reset_btn")
+    end
+end
+
 -- ─── MAIN DRAW ───────────────────────────────────────────────────────────────
 
 function xg_draw_window()
@@ -1104,8 +1203,10 @@ function xg_draw_window()
     fit_window_to_columns()
 
     -- Expand mode: resize the window height to fit the full CP/GQ list.
-    -- Only applies to the event tabs; settings is never expanded.
-    if snd_get_setting("list_display_mode", "expand") == "expand" then
+    -- Only applies to the event tabs; settings is never expanded. Skipped
+    -- entirely while rolled up (xg_collapse_window) -- otherwise this would
+    -- resize straight back open on the very next draw.
+    if not _collapsed and snd_get_setting("list_display_mode", "expand") == "expand" then
         local list = (_active_tab == "cp") and _cp_list
                   or (_active_tab == "gq") and _gq_list or nil
         if list and #list > 0 then
@@ -1134,22 +1235,7 @@ function xg_draw_window()
         "snd_win_resize_move",
         "snd_win_resize_up")
 
-    -- [x] close button painted on top of the title bar chrome.
-    do
-        local body_top = geometry()
-        local lh       = font_line_h()
-        local btn_str  = "[x]"
-        local btn_w    = WindowTextWidth(win, FONT_ID, btn_str) + 4
-        local btn_x    = _width - btn_w - 2
-        local btn_y    = math.max(0, math.floor((body_top - lh) / 2))
-        WindowText(win, FONT_ID, btn_str, btn_x, btn_y, 0, 0, 0xAAAAAA, false)
-        WindowDeleteHotspot(win, "snd_close_btn")
-        WindowAddHotspot(win, "snd_close_btn",
-            btn_x - 1, 0, _width - 1, body_top,
-            "", "", "", "", "xg_hide_window",
-            "Hide window  (right-click title bar or tabs to restore)",
-            miniwin.cursor_hand, 0)
-    end
+    draw_title_bar_buttons()
 
     Repaint()
 end
@@ -1164,7 +1250,19 @@ function snd_tab_click(flags, hotspot_id)
     end
     if key ~= _active_tab then _scroll_offset[key] = _scroll_offset[key] or 0 end
     _active_tab = key
+    if key == "quest" then xg_stop_quest_flash() end
     xg_draw_window()
+end
+
+-- The [R] title-bar button: re-fetch info for whichever tab is active.
+-- xg_draw_window() only shows the button at all on the cp/gq tabs, so
+-- reaching here with anything else would mean a stale hotspot; do nothing.
+function snd_info_reset_click(flags, hotspot_id)
+    if _active_tab == "cp" and type(do_cp_info) == "function" then
+        do_cp_info()
+    elseif _active_tab == "gq" and type(do_gq_info) == "function" then
+        do_gq_info()
+    end
 end
 
 function snd_row_click(flags, hotspot_id)
@@ -1190,9 +1288,54 @@ function snd_tnl_down_click(flags, hotspot_id)
     xg_draw_window()
 end
 
+-- ─── COLLAPSE / EXPAND ────────────────────────────────────────────────────────
+--
+-- 'xset win max|expand' / 'min|collapse' used to just flip list_display_mode
+-- (whether the target list auto-grows to fit its content or scrolls at a
+-- fixed height) -- a real, useful setting, but a different one, already
+-- exposed on its own via the right-click menu's "Auto-Expand List" entry.
+-- Neither form ever touched the window's own height, so despite the help
+-- text promising a collapse to "its normal and minimized state", nothing
+-- actually minimized.
+--
+-- This is that: collapse rolls the window up to just past the info (TNL)
+-- bar -- tabs and TNL/NX status still visible, target list and status bar
+-- hidden -- remembering the height it was at; expand restores it. Bypasses
+-- the MIN_H floor deliberately: that guards against dragging the window
+-- too small to use, not against a deliberate, code-computed roll-up.
+
+-- Both return true when they actually changed anything, so the alias handler
+-- (xg_window_command) can tell "just collapsed it" from "already was".
+function xg_collapse_window()
+    if _collapsed or not window_exists() then return false end
+    local _, _, _, _, info_bot = geometry()
+    _pre_collapse_h = _height
+    _collapsed      = true
+    _height         = info_bot + PAD_BOTTOM
+    WindowResize(win, _width, _height, Theme.SECONDARY_BODY)
+    xg_draw_window()
+    xg_save_window_state()
+    return true
+end
+
+function xg_expand_window()
+    if not _collapsed or not window_exists() then return false end
+    _collapsed      = false
+    _height         = _pre_collapse_h or DEFAULT_H
+    _pre_collapse_h = nil
+    WindowResize(win, _width, _height, Theme.SECONDARY_BODY)
+    xg_draw_window()
+    xg_save_window_state()
+    return true
+end
+
 -- ─── RESIZE ──────────────────────────────────────────────────────────────────
 
 function snd_win_resize_down()
+    -- A manual drag takes the window out of collapsed state: the height
+    -- about to result from it is the user's, not xg_expand_window's saved one.
+    _collapsed      = false
+    _pre_collapse_h = nil
     _resize_sx = WindowInfo(win, 17)
     _resize_sy = WindowInfo(win, 18)
 end
@@ -1481,13 +1624,17 @@ function xg_window_command(name, line, wildcards)
     elseif opt == "off" or opt == "hide" or opt == "0" or opt == "false" then
         xg_hide_window()
     elseif opt == "max" or opt == "maximize" or opt == "expand" then
-        snd_set_setting("list_display_mode", "expand", true)
-        InfoNote("SnD: target list auto-expands to fit.")
-        if window_exists() then xg_draw_window() end
+        if xg_expand_window() then
+            InfoNote("SnD: window expanded to its previous height.")
+        else
+            InfoNote("SnD: window is already at its normal height.")
+        end
     elseif opt == "min" or opt == "minimize" or opt == "collapse" then
-        snd_set_setting("list_display_mode", "scroll", true)
-        InfoNote("SnD: target list stays a fixed height and scrolls.")
-        if window_exists() then xg_draw_window() end
+        if xg_collapse_window() then
+            InfoNote("SnD: window rolled up to the tab and TNL bar.")
+        else
+            InfoNote("SnD: window is already rolled up.")
+        end
     else
         xg_toggle_window()
     end
@@ -1540,6 +1687,8 @@ function xg_save_window_state()
     SetVariable("snd_win_width",  tostring(_width))
     SetVariable("snd_win_height", tostring(_height))
     SetVariable("snd_win_min_h",  tostring(_min_expand_h))
+    SetVariable("snd_win_collapsed",      _collapsed and "1" or "")
+    SetVariable("snd_win_pre_collapse_h", _pre_collapse_h and tostring(_pre_collapse_h) or "")
     if type(sp_save_state) == "function" then sp_save_state() end
 end
 
@@ -1571,6 +1720,12 @@ function xg_create_window()
     _width        = saved_w or math.max(MIN_W, math.floor(_screen_w * 0.28))
     _height       = saved_h or DEFAULT_H
     _min_expand_h = saved_min or DEFAULT_H
+    -- _height above may itself be the collapsed height (that is what was
+    -- saved) -- restoring _collapsed alongside it is what makes 'xset win
+    -- expand' able to do anything after a reload, instead of finding
+    -- _collapsed reset to false with no saved height to distrust it against.
+    _collapsed      = GetVariable("snd_win_collapsed") == "1"
+    _pre_collapse_h = tonumber(GetVariable("snd_win_pre_collapse_h"))
 
     local font_name, font_size = select_font(_scale)
     _active_font_name = font_name
