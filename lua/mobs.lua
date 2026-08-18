@@ -1,5 +1,5 @@
 -- mobs.lua
--- Mob sightings, kills, tags (nowhere/nohunt/priority), and room lookups.
+-- Mob sightings, kills, tags (nowhere/nohunt/express), and room lookups.
 -- Depends on: constants.lua, util.lua, db.lua, areas.lua
 
 -- ─── MOB SIGHTINGS ────────────────────────────────────────────────────────────

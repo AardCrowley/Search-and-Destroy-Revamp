@@ -460,11 +460,43 @@ function cl_check_new_version()
         -- Printing the release notes would be a wall of text either way (v6.0
         -- alone is the better part of a thousand lines), and printing nothing
         -- loses the one moment the feature exists for. So this points at the
-        -- command rather than running it.
+        -- command rather than running it. Unconditional, regardless of
+        -- 'snd changelog auto': it is a one-time orientation message, not a
+        -- repeating changelog dump.
         InfoNote("SnD: Welcome to v", running_version(),
                  " -- run 'snd changelog all' to see what is in it.")
         stamp_seen()
         return
     end
+
+    if snd_get_setting("changelog_auto_onoff", "on") ~= "on" then
+        -- Deliberately does not stamp_seen(): with auto-display off,
+        -- last_installed_version has to keep pointing at the version the
+        -- player actually last saw the notes for, not the one that was
+        -- silently skipped -- otherwise turning auto back on, or running
+        -- 'snd changelog' by hand, would show nothing when a version really
+        -- was missed.
+        return
+    end
     cl_show("new", nil, true)
+end
+
+-- Alias handler: 'snd changelog auto [on|off]'.
+--
+-- 'on' (the default) is today's existing behavior: show what changed once,
+-- automatically, the first time a new version loads. 'off' turns that off --
+-- the changelog is still one 'snd changelog' away, on request.
+function changelog_auto(name, line, wildcards)
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local opt = Trim(tostring(w.state or w[1] or "")):lower()
+
+    if opt == "on" or opt == "off" then
+        snd_set_setting("changelog_auto_onoff", opt, true)
+        InfoNote("SnD: Automatic changelog display is now " .. string.upper(opt) .. ".")
+    elseif opt == "" then
+        local cur = snd_get_setting("changelog_auto_onoff", "on")
+        InfoNote("SnD: Automatic changelog display: " .. string.upper(cur) .. ".")
+    else
+        UsageNote("SnD: snd changelog auto: '" .. opt .. "' is not on or off.")
+    end
 end

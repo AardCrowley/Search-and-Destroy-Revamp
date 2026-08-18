@@ -57,11 +57,9 @@ be made in the future.
 ## Requirements
 
 * **MUSHclient 4.90 or later**, with the Aardwolf MUSHclient package
-  (`aardwolf_colors.lua`, `async`, `movewindow`, and the theme system all come
-  from it).
-* **The Aardwolf GMCP mapper plugin.** S&D reads the mapper's database to plan
-  routes. Without it the plugin still runs, but pathing is disabled.
-* Nothing else. All Lua is 5.1 — MUSHclient does not run 5.2 or later.
+  (`aardwolf_colors.lua`, `async`, `movewindow`, the theme system, and the
+  GMCP mapper plugin all come from it). S&D reads the mapper's database to
+  plan routes.
 
 ---
 

@@ -232,7 +232,7 @@ table_width = 80
 -- Keep it in step with the VERSION file; tests/version_consistency_test.lua
 -- fails the build if they disagree, and checks the attribute is the
 -- major.minor of it.
-SND_VERSION = "6.0.4"
+SND_VERSION = "6.0.51-dev"
 
 -- snd_version() also exists in constants.lua, for the modules to call: modules
 -- are updated by 'snd update' while this file is not, so a module calling a
@@ -3856,34 +3856,33 @@ function xset_mob_express(name, line, wildcards)
     end
 end
 
-function xset_mob_priority(name, line, wildcards)
-    local w   = (type(wildcards) == "table" and wildcards) or {}
-    local mob    = Trim(w["mob"] or "")
-    local zone   = current_room.arid or ""
-    local roomId = tonumber(current_room.rmid)
-    if mob == "" then
-        InfoNote("Usage: xset mob priority <mob name>")
-        return
-    end
-    if not roomId or roomId <= 0 then
-        InfoNote("Current room is invalid.")
-        return
-    end
-    mob_set_priority_room(mob, zone, roomId)
-    InfoNote("Priority room for '", mob, "' in '", zone,
-             "' set to room ", tostring(roomId), ".")
-end
-
-function xset_mob_unpriority(name, line, wildcards)
-    local w   = (type(wildcards) == "table" and wildcards) or {}
+-- The only other way to clear a mob's express flag was 'clearflags', which
+-- wipes every other flag and the difficulty rating along with it. This is
+-- the single-purpose removal 'xset mob priority'/'unpriority' used to be for
+-- the room pin alone -- now that express is the only thing that ever sets a
+-- priority room, this clears both together.
+function xset_mob_unexpress(name, line, wildcards)
+    local w    = (type(wildcards) == "table" and wildcards) or {}
     local mob  = Trim(w["mob"] or "")
     local zone = current_room.arid or ""
     if mob == "" then
-        InfoNote("Usage: xset mob unpriority <mob name>")
+        InfoNote("Usage: xset mob unexpress <mob name>")
         return
     end
+    if zone == "" then
+        InfoNote("SnD: Not in a known area (no GMCP zone data).")
+        return
+    end
+    mob_set_tags(mob, zone, { express = false })
     mob_set_priority_room(mob, zone, nil)
-    InfoNote("Priority room for '", mob, "' in '", zone, "' cleared.")
+    InfoNote("Mob '", mob, "' express flag: OFF (zone: ", zone,
+             "). Its pinned room is cleared too.")
+
+    if type(build_main_target_list) == "function"
+    and type(current_activity) == "string"
+    and (current_activity == "cp" or current_activity == "gq") then
+        build_main_target_list(current_activity, area_room_type)
+    end
 end
 
 function xset_mob_tags(name, line, wildcards)
@@ -4877,7 +4876,7 @@ local _snd_subroutines = {
     "alias_session_summary", "anex_automatic_off", "anex_automatic_on", "anex_mobdeath_xp1",
     "auto_hunt", "auto_hunt_abort", "auto_hunt_complete", "auto_hunt_door",
     "auto_hunt_door_open", "auto_hunt_lowskill", "auto_hunt_next", "auto_hunt_noarg",
-    "auto_hunt_portal", "changelog_since", "consider_end", "consider_mob_line",
+    "auto_hunt_portal", "changelog_auto", "changelog_since", "consider_end", "consider_mob_line",
     "consider_unkillable", "copyPwarDB", "copyPwarWarn", "cp_check_can_get_new_cp",
     "cp_check_cannot_get_new_cp", "cp_mob_killed", "do_cp_check", "do_cp_complete",
     "do_cp_info", "do_cp_quit", "do_gq_check", "do_gq_info",
@@ -4901,7 +4900,7 @@ local _snd_subroutines = {
     "trigger_campaign_rewards_gold", "trigger_campaign_rewards_practices", "trigger_campaign_rewards_qp", "trigger_campaign_rewards_tps",
     "trigger_campaign_rewards_trains", "trigger_damage_done", "trigger_quest_premonition", "trigger_receive_xp",
     "xcp_arg", "xcp_noarg", "xcp_set_action_mode", "xcp_toggle_quest_targeting",
-    "xdb_clean", "xg_create_window", "xg_window_command", "xmap_rooms_linking_here",
+    "xdb_clean", "xg_create_window", "xg_window_command", "xg_window_tabs_command", "xmap_rooms_linking_here",
     "xmapper_move", "xmark_list", "xmobdeaths_cmd", "xq_command",
     "xrt_noarg", "xrun_to_alias", "xset_area_delete", "xset_area_edit_difficulty",
     "xset_area_edit_lock", "xset_area_edit_max", "xset_area_edit_min", "xset_area_edit_name",
@@ -4915,7 +4914,7 @@ local _snd_subroutines = {
     "xset_marks_list", "xset_marks_search", "xset_maze", "xset_maze_delete",
     "xset_maze_list", "xset_mob_clearflags", "xset_mob_difficulty", "xset_mob_express",
     "xset_mob_levelok", "xset_mob_noaction", "xset_mob_nohunt", "xset_mob_noscan",
-    "xset_mob_nowhere", "xset_mob_priority", "xset_mob_tags", "xset_mob_unpriority",
+    "xset_mob_nowhere", "xset_mob_tags", "xset_mob_unexpress",
     "xset_noexp_tnl", "xset_nx", "xset_pathing", "xset_pathing_express",
     "xset_quick_kill_command", "xset_rlink", "xset_silent_mode", "xset_snd_dev_update",
     "xset_snd_force_update", "xset_snd_update", "xset_sound", "xset_table_notes",
@@ -5332,6 +5331,8 @@ end
 
         <alias match="^xset (?:window|win) (?<onoff>on|off|show|hide|0|1|true|false|max(?:imize)?|expand|min(?:imize)?|collapse)$" script="xg_window_command" enabled="y" regexp="y" sequence="100"></alias>
 
+        <alias match="^xset (?:window|win) tabs(?: (?<mode>single|multi))?$" script="xg_window_tabs_command" enabled="y" regexp="y" sequence="99"></alias>
+
         <alias match="^(?:xw|xwh|xwhere)( (?<n1>\d+))?( (?<n2>\d+))?( (?<mob>.+))?$" script="do_xwhere" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^(?:xg|xgui) (?:ref|refresh)$" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12">
@@ -5417,6 +5418,8 @@ end
 
         <alias match="^snd changelog since (?<version>\S+)$" script="changelog_since" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
+        <alias match="^snd changelog auto(?: (?<state>on|off))?$" script="changelog_auto" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
         <!-- History and stats commands -->
         <alias match="^snd history(?<hist_type> (campaign|cp|quest|q|gq|gquest))?$" script="alias_print_history" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^snd stats(?<arg1> \w+)?(?<arg2> \w+)?(?<arg3> \w+)?$" script="alias_print_stats" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
@@ -5457,9 +5460,7 @@ end
         <alias match="^xset mob levelok (?<mob>.+)$" script="xset_mob_levelok" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
         <alias match="^xset mob express\s*(?<args>.*)$" script="xset_mob_express" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
-        <alias match="^xset mob priority (?<mob>.+)$" script="xset_mob_priority" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
-
-        <alias match="^xset mob unpriority (?<mob>.+)$" script="xset_mob_unpriority" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+        <alias match="^xset mob unexpress (?<mob>.+)$" script="xset_mob_unexpress" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^xset mob tags?(?:\s+(?<zone>\w+))?$" script="xset_mob_tags" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 

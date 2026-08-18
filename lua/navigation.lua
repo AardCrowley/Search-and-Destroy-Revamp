@@ -472,6 +472,7 @@ function goto_next(name, line, wildcards)
     if dest then
         InfoNote("SnD: nx — " .. gotoIndex .. " of " .. #gotoList)
         next_room = dest
+        nx_arrival_xcp_action()
         set_going_to_room(next_room)
         do_mapper_goto(next_room)
     else
@@ -496,6 +497,7 @@ function goto_previous(name, line, wildcards)
     if dest then
         InfoNote("SnD: nx- — " .. gotoIndex .. " of " .. #gotoList)
         next_room = dest
+        nx_arrival_xcp_action()
         set_going_to_room(next_room)
         do_mapper_goto(next_room)
     else
@@ -537,6 +539,28 @@ local function xcp_arrival_action(t)
         return function() qw_exact() end
     end
     return nil
+end
+
+-- An express target's room is already known, so nothing should auto-hunt or
+-- auto-'where' the moment 'xcp' arrives there -- only a manual 'ht'/'qw', or
+-- 'nx' cycling to a fallback room once the mob turns out not to be there,
+-- should trigger the 'xcp mode' action for an express target.
+local function xcp_arrival_action_unless_express(t)
+    if is_express_target(t) then return nil end
+    return xcp_arrival_action(t)
+end
+
+-- Queues the 'xcp mode' action for the arrival an 'nx'/'nx-' step is about to
+-- cause, but only when the target being cycled through is express -- that is
+-- the "the mob was not in the expected room" moment express itself never
+-- auto-fires for. Non-express nx/room-CP arrivals already queue their action
+-- from xcp_goto_target, so this only ever adds the express case.
+function nx_arrival_xcp_action()
+    local idx = current_target and current_target.index
+    local t   = idx and main_target_list[idx]
+    if t and is_express_target(t) then
+        set_xcp_arrival_action(xcp_arrival_action(t))
+    end
 end
 
 -- Navigate to target at index in main_target_list.
@@ -592,7 +616,7 @@ function xcp_goto_target(index)
                     "SnD: Resumed [%s] — room %d of %d.",
                     sn.mob_key, gotoIndex, #gotoList
                 ))
-                set_xcp_arrival_action(xcp_arrival_action(t))
+                set_xcp_arrival_action(xcp_arrival_action_unless_express(t))
                 set_going_to_room(tonumber(dest))
                 goto_room_id(tostring(dest), t.arid)
             elseif dest then
@@ -600,7 +624,7 @@ function xcp_goto_target(index)
                     "SnD: Resumed [%s] — routing to area %s.",
                     sn.mob_key, tostring(dest)
                 ))
-                local fn = xcp_arrival_action(t)
+                local fn = xcp_arrival_action_unless_express(t)
                 if fn then execute_in_area(tostring(dest), fn) end
                 xrun_to(dest, true)
             end
@@ -628,7 +652,7 @@ function xcp_goto_target(index)
     end
 
     local express = is_express_target(t)
-    local arrival = xcp_arrival_action(t)
+    local arrival = xcp_arrival_action_unless_express(t)
 
     -- Nothing is queued yet for this navigation, and a previous one may have
     -- been abandoned part-way.
@@ -659,14 +683,41 @@ function xcp_goto_target(index)
         -- was routed to the area entrance instead of straight to its own
         -- room. is_maze_room() (areas.lua) is the per-room check pathing.lua
         -- already uses for the same distinction; this now matches it.
+        -- A maze room does not have to mean the area entrance: 'xset rlink'
+        -- exists precisely for a room the mapper cannot reach directly but
+        -- CAN reach via a known entrance -- go_to_current_target ('go') has
+        -- honored a configured link this way for a while; xcp_goto_target
+        -- never did, so 'xcp' fell back to the area entrance even when the
+        -- player had already solved the maze with cexits and a link, and
+        -- 'go'/'qw' could already get there. Reported by a player with
+        -- exactly that setup on coral's entrance maze.
         local use_area_fallback = false
+        local link_near = nil
         if not t.roomid or tonumber(t.roomid) == nil or tonumber(t.roomid) == 0 then
             use_area_fallback = true
         elseif type(is_maze_room) == "function" and is_maze_room(t.roomid) then
-            use_area_fallback = true
+            link_near = find_room_link_near(t.roomid)
+            if not link_near then
+                use_area_fallback = true
+            end
         end
 
-        if use_area_fallback then
+        if link_near then
+            -- Same two-hop pattern as go_to_current_target: mapper to the
+            -- link's near side, then attempt the far (actual target) room --
+            -- which succeeds when cexits give the mapper a real path through
+            -- what would otherwise be an untrustworthy maze.
+            set_xcp_arrival_action(arrival)
+            _go_link_near_roomid = link_near
+            _go_link_far_roomid  = t.roomid
+            _go_link_far_arid    = t.arid
+            set_going_to_room(t.roomid)
+            InfoNote(string.format(
+                "SnD: Express target room %d is behind a link — navigating to entrance %d first.",
+                tonumber(t.roomid), link_near))
+            goto_room_id(tostring(link_near), t.arid)
+            execute_in_room(link_near, go_link_arrived_at_near_side)
+        elseif use_area_fallback then
             InfoNote("SnD: Express target is in a maze area — routing to area entrance instead of specific room.")
             gotoList[0] = t.arid
             if arrival then execute_in_area(t.arid, arrival) end
@@ -738,9 +789,9 @@ function xcp_goto_target(index)
         -- where it necessarily is, so the 'xcp mode' action is queued here too.
         search_rooms_exact(t.roomName, t.arid, t.mob, true)
 
-        -- A pinned room ('xset mob priority') is a deliberate answer to which
-        -- of the same-named rooms this mob is in, so it outranks the sighting
-        -- ranking.  Otherwise gotoList[1] is the best room after
+        -- A pinned room (set by 'xset mob express') is a deliberate answer to
+        -- which of the same-named rooms this mob is in, so it outranks the
+        -- sighting ranking.  Otherwise gotoList[1] is the best room after
         -- search_rooms_results has sorted by sightings.
         local rid = nil
         if t.pinned_room and tonumber(t.roomid) then

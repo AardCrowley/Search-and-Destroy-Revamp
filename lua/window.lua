@@ -347,7 +347,17 @@ end
 
 -- ─── TAB VISIBILITY ──────────────────────────────────────────────────────────
 
+-- Single-tab mode ('xset win tabs single'): one tab, following whichever of
+-- quest/CP/GQ is currently active, instead of three clickable ones. Reusing
+-- visible_tabs/ensure_active_tab_visible for this rather than a parallel
+-- mechanism -- they already do exactly "show only what is_tab_visible allows,
+-- fall back to _active_tab's first visible choice" -- means every caller of
+-- either keeps working unchanged; only the definition of "visible" needs to
+-- change; only the currently active tab is a tab at all.
 local function is_tab_visible(key)
+    if snd_get_setting("tab_mode", "multi") == "single" then
+        return key == _active_tab
+    end
     if key == "quest" then return true end
     return snd_get_setting("tab_show_" .. key, "on") == "on"
 end
@@ -475,8 +485,18 @@ local function draw_tab_bar(tab_top, tab_bot)
     for i, tab in ipairs(vtabs) do
         local tx1   = PAD_LEFT + (i - 1) * tab_w
         local tx2   = (i == #vtabs) and (_width - PAD_RIGHT - 1) or (tx1 + tab_w - 2)
-        local active   = (_active_tab == tab.key)
-        local flashing = (tab.key == "quest") and (not active) and _quest_flash_on
+        local active = (_active_tab == tab.key)
+        -- In single-tab mode the one tab there is counts as "active"
+        -- trivially (it's the only visible entry, by construction), but it
+        -- can still be showing cp/gq while a quest event fires -- with no
+        -- separate quest tab to flash instead. So there, flash it regardless
+        -- of the active check, whenever it isn't already showing quest.
+        local flashing
+        if snd_get_setting("tab_mode", "multi") == "single" then
+            flashing = (tab.key ~= "quest") and _quest_flash_on
+        else
+            flashing = (tab.key == "quest") and (not active) and _quest_flash_on
+        end
 
         local bg = active and Theme.PRIMARY_BODY or Theme.SECONDARY_BODY
         if flashing then
@@ -1370,6 +1390,14 @@ function snd_tab_right_click_menu(key)
             label = (vis and "Hide " or "Show ") .. name .. " Tab" }
         items[#items + 1] = { action = "sep" }
     end
+    -- No 'checked' field: see the comment above snd_right_click_menu's own
+    -- item list for why (WindowMenu's checked marker rendered as a grayed-
+    -- out, unclickable item for at least one player, trapping single-tab
+    -- mode with no way back). The label names the action instead.
+    items[#items + 1] = { action = "tab_mode",
+        label = (snd_get_setting("tab_mode", "multi") == "single")
+            and "Show All Tabs" or "Show Single Tab Only" }
+    items[#items + 1] = { action = "sep" }
     items[#items + 1] = { action = "open_settings", label = "Settings..."   }
     items[#items + 1] = { action = "sep" }
     items[#items + 1] = { action = "font_pick",     label = "Change Font..." }
@@ -1381,7 +1409,7 @@ function snd_tab_right_click_menu(key)
         if it.action == "sep" then
             parts[#parts + 1] = "-"
         else
-            parts[#parts + 1] = (it.checked and "^" or "") .. it.label
+            parts[#parts + 1] = it.label
             label_map[it.label] = it.action
         end
     end
@@ -1390,11 +1418,14 @@ function snd_tab_right_click_menu(key)
                               table.concat(parts, "|"))
     if not result or result == "" then return end
 
-    local clean  = result:match("^%^?(.+)$") or result
-    local action = label_map[clean] or label_map[result]
+    local action = label_map[result]
     if action == "toggle_tab" then
         snd_set_setting("tab_show_" .. key, is_tab_visible(key) and "off" or "on", false)
         ensure_active_tab_visible(); xg_draw_window()
+    elseif action == "tab_mode" then
+        local cur = snd_get_setting("tab_mode", "multi")
+        snd_set_setting("tab_mode", cur == "single" and "multi" or "single", true)
+        xg_draw_window()
     elseif action == "open_settings" then sp_open()
     elseif action == "font_pick"     then snd_pick_font()
     elseif action == "font_reset"    then snd_reset_font()
@@ -1404,17 +1435,26 @@ end
 local function snd_right_click_menu()
     local win_visible = snd_get_setting("xgui_window_onoff", "on") == "on"
     local list_expand = snd_get_setting("list_display_mode", "expand") == "expand"
+    local single_tab  = snd_get_setting("tab_mode", "multi") == "single"
 
+    -- Deliberately no 'checked' field on any of these: WindowMenu's checked-
+    -- item marker rendered as a grayed-out, unclickable entry for at least
+    -- one player, not a checkmark, so a setting that started checked could
+    -- never be un-set again from this menu -- reported as "I can't add
+    -- CP/GQ tabs, nothing" after switching to a single tab. Every item here
+    -- instead names the action a click performs, the same way
+    -- toggle_window/toggle_tab already safely did.
     local items = {
         { action = "open_settings",  label = "Settings..."                                            },
         { action = "sep" },
         { action = "font_pick",      label = "Change Font..."                                         },
         { action = "font_reset",     label = "Reset Font"                                             },
         { action = "sep" },
-        { action = "tab_cp",         label = "Show Campaign Tab",        checked = is_tab_visible("cp") },
-        { action = "tab_gq",         label = "Show Global Quest Tab",    checked = is_tab_visible("gq") },
+        { action = "tab_mode",       label = single_tab and "Show All Tabs" or "Show Single Tab Only"  },
+        { action = "tab_cp",         label = (is_tab_visible("cp") and "Hide " or "Show ") .. "Campaign Tab" },
+        { action = "tab_gq",         label = (is_tab_visible("gq") and "Hide " or "Show ") .. "Global Quest Tab" },
         { action = "sep" },
-        { action = "list_mode",      label = "Auto-Expand List (CP/GQ)", checked = list_expand          },
+        { action = "list_mode",      label = (list_expand and "Disable" or "Enable") .. " Auto-Expand List (CP/GQ)" },
         { action = "sep" },
         { action = "toggle_window",  label = win_visible and "Hide Window" or "Show Window"            },
         { action = "bring_front",    label = "Bring To Front"                                          },
@@ -1427,7 +1467,7 @@ local function snd_right_click_menu()
         if it.action == "sep" then
             parts[#parts + 1] = "-"
         else
-            parts[#parts + 1] = (it.checked and "^" or "") .. it.label
+            parts[#parts + 1] = it.label
             label_map[it.label] = it.action
         end
     end
@@ -1436,14 +1476,17 @@ local function snd_right_click_menu()
                               table.concat(parts, "|"))
     if not result or result == "" then return end
 
-    local clean  = result:match("^%^?(.+)$") or result
-    local action = label_map[clean] or label_map[result]
+    local action = label_map[result]
     if     action == "open_settings"  then sp_open()
     elseif action == "font_pick"      then snd_pick_font()
     elseif action == "font_reset"     then snd_reset_font()
     elseif action == "list_mode"      then
         local cur = snd_get_setting("list_display_mode", "expand")
         snd_set_setting("list_display_mode", cur == "expand" and "scroll" or "expand", true)
+        xg_draw_window()
+    elseif action == "tab_mode"       then
+        local cur = snd_get_setting("tab_mode", "multi")
+        snd_set_setting("tab_mode", cur == "single" and "multi" or "single", true)
         xg_draw_window()
     elseif action == "tab_cp"         then
         snd_set_setting("tab_show_cp", is_tab_visible("cp") and "off" or "on", false)
@@ -1637,6 +1680,33 @@ function xg_window_command(name, line, wildcards)
         end
     else
         xg_toggle_window()
+    end
+end
+
+-- Alias handler: 'xset win tabs [single|multi]'.
+--
+-- 'single' collapses quest/CP/GQ down to one tab that always shows whichever
+-- is currently active -- current_activity for CP/GQ, quest as the fallback
+-- when neither is running -- instead of three you click between. Reuses
+-- is_tab_visible/visible_tabs (see the comment above is_tab_visible) rather
+-- than a parallel single-tab code path, so drawing, scrolling, and the
+-- title-bar buttons all keep working exactly as they already do for
+-- whichever one tab is showing.
+function xg_window_tabs_command(name, line, wildcards)
+    local w    = (type(wildcards) == "table" and wildcards) or {}
+    local mode = tostring(w.mode or w[1] or ""):lower()
+
+    if mode == "single" or mode == "multi" then
+        snd_set_setting("tab_mode", mode, true)
+        InfoNote("SnD: Tabs: " .. mode .. (mode == "single"
+            and " -- one tab, following whichever of quest/CP/GQ is active."
+            or " -- quest, CP, and GQ each get their own tab again."))
+        if window_exists() then xg_draw_window() end
+    else
+        local cur = snd_get_setting("tab_mode", "multi")
+        InfoNote("SnD: Tabs: " .. cur .. ".  'xset win tabs single' for one " ..
+            "tab that follows whichever activity is current; " ..
+            "'xset win tabs multi' for the usual three.")
     end
 end
 

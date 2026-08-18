@@ -21,7 +21,7 @@ function is_express_target(target)
     if snd_get_setting("express_onoff", "on") ~= "on" then
         return false
     end
-    local min_kills = tonumber(snd_get_setting("express_min_kill_count", "2")) or 2
+    local min_kills = tonumber(snd_get_setting("express_min_kill_count", "3")) or 3
     return  target.results  ~= nil
         and target.kills    ~= nil
         and tonumber(target.results) > 0
@@ -77,7 +77,7 @@ function xset_express(name, line, wildcards)
     end
 
     local cur_onoff  = snd_get_setting("express_onoff", "on")
-    local cur_thresh = snd_get_setting("express_min_kill_count", "2")
+    local cur_thresh = snd_get_setting("express_min_kill_count", "3")
     InfoNote("SnD: Express mode: " .. string.upper(cur_onoff) ..
              " (threshold: " .. cur_thresh .. " kill(s)).")
     InfoNote("SnD: Express sends you straight to a mob's known kill room " ..

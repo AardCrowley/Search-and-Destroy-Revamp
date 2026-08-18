@@ -1,6 +1,71 @@
-# v6.0.4
+# v6.0.51-dev
+
+**A development build.**  Nothing here is in a public release yet.  Run
+`snd version` to see whether you are on one of these.
 
 ## Bug Fixes
+
+- **Fixed: the quest tab flashed for events that had nothing to look at.**
+  Any quest event mid-campaign or mid-gquest — a new target, a kill, the
+  quest ending — flashed the quest tab, not just the cooldown becoming ready
+  again. Only a `ready` transition actually means something worth switching
+  to eventually; the rest are just data updates. Only `ready` flashes now.
+
+  Requesting a quest yourself while mid-campaign/gquest also used to only
+  flash, the same as a passive event — but that's a deliberate action, not
+  something happening in the background, so it now switches straight to the
+  quest tab instead, the same way `xcp` earns the tab by navigating there.
+  It stays there until you switch back yourself, or `cp check`/`gq check`
+  does — both are a deliberate look back at the campaign/gquest, so both
+  return the tab to it.
+
+- **Fixed: hunt trick (or `where`) could fire on its own for an express
+  mob.**  `xcp mode ht`/`qw` auto-fired on arrival however `xcp` got you
+  there, including an express jump — but an express room is a remembered
+  kill spot, not a guess the way a campaign-named or area-entrance room is,
+  so nothing should hunt or `where` the instant you land there. `xcp` on an
+  express mob now only walks you to the room and loads it as your target.
+  If the mob is not there, run `ht`/`qw` yourself, or use `nx` to cycle the
+  other rooms sharing that name — `nx` is the one place that does still
+  fire the `xcp mode` action automatically, since reaching for it at all
+  means express guessed wrong.
+  Reported by **Selitos**.
+
+- **Fixed: switching to `xset win tabs single` could leave no way back.**
+  The right-click menu's checkable items (Single Tab, Auto-Expand List, Show
+  Campaign/GQ Tab) used WindowMenu's checked-item marker to show a tick —
+  which rendered as a grayed-out, unclickable entry instead, in at least one
+  player's MUSHclient.  Once a setting became checked, the one menu item
+  that could un-set it stopped responding to clicks at all — for single-tab
+  mode specifically, that meant no way back to multiple tabs from the menu.
+  Every one of those items now names the action a click performs directly in
+  its label ("Show All Tabs" / "Show Single Tab Only", etc.) instead of
+  relying on a checkmark — the same safe pattern the window's own
+  show/hide toggle already used without issue.  `xset win tabs multi`
+  (typed) was never affected, and still works either way.
+  Reported live, with the exact symptom ("grayed out instead of ticked")
+  that pinned it down.
+
+- **Fixed: turning `xset express` off and back on could resurrect mobs
+  already killed in between.**  Rebuilding the target list — which toggling
+  express does, but so does anything else that calls it — reads from the
+  last real `cp check`/`cp info` (or the gquest equivalents), which does not
+  know about a kill made through the plugin since then; a kill only ever
+  marks the in-memory list, with no way back into the check data it was
+  built from. A rebuild now carries forward anything already marked dead
+  (and a lower gquest kill count, for a multi-count entry) onto the fresh
+  list, matched the same way a kill is recorded in the first place.
+
+- **Fixed: an express target behind a maze room ignored a configured
+  `xset rlink` and always routed to the area entrance instead**, even with
+  the custom mapper exits (`cexits`) needed to actually reach it, and even
+  though `go`/`qw` could already get there through the same link.  `xcp`'s
+  own navigation never consulted a configured link for a maze room, only
+  `go_to_current_target` did.  It now tries the link first, the same
+  two-hop way `go` already does — to the link's near side, then attempting
+  the real target room, which succeeds when `cexits` give the mapper a
+  genuine path through what would otherwise be an untrustworthy maze — and
+  only falls back to the area entrance when no link is configured.
 
 - **Fixed: `xcp mode ht` could cancel its own `where` the moment a hunt
   trick had escalated past the first same-named mob.**  Arriving at the
@@ -207,6 +272,43 @@
   kept either way.
 
 ## New
+
+- **The default express kill-count threshold is now 3, up from 2.**  Express
+  is meant for a mob you can confidently point at one specific room; 2 kills
+  in the same room was flagging some mobs express too eagerly. Still fully
+  configurable with `xset express <number>` — this only changes what a fresh
+  install, or a character who never touched the setting, starts with.
+
+- **`xset mob unexpress <mob>` — remove express from one mob without
+  clearing everything else.**  The only prior way to remove express from a
+  single mob was `clearflags`, which wipes every other flag and the
+  difficulty rating along with it. `unexpress` forces express off and clears
+  its pinned room, leaving everything else untouched — and unlike running
+  `xset mob express` again, it always turns it off rather than toggling
+  (which only undoes a set made from the same zone it was set in).
+  `xset mob priority`/`unpriority` are gone: they set/cleared the same
+  pinned-room data `express` already writes, nobody used them on their own,
+  and `unpriority` alone could silently strip an express mob's destination
+  room while leaving express on. `express` is now the only thing that ever
+  sets a pinned room.
+
+- **`xset win tabs single` — one tab instead of three.**  Collapses quest,
+  CP, and GQ down to a single tab that always shows whichever is currently
+  active, instead of three you click between.  `xset win tabs multi` goes
+  back to the usual three; bare `xset win tabs` reports which you're in.
+  Also available from the right-click menu.  Finishing a campaign or gquest
+  while the other is still running moves the tab to what's still active
+  instead of leaving it on a now-empty one — true in multi-tab mode too, but
+  it's what makes single-tab mode actually track the active activity rather
+  than getting stuck.  A quest event with no separate quest tab to flash
+  flashes the one tab you have instead.
+
+- **`snd changelog auto [on|off]` — turn off the automatic notice on
+  update.**  On by default, same as always: the changelog since your last
+  version shows once, automatically, the first time a new version loads.
+  Turning it off doesn't lose anything — `snd changelog`, run by hand, still
+  shows everything since the version you actually last saw, even after
+  several updates went by unannounced.
 
 - **A [R] title-bar button re-fetches CP/GQ info with a click.**  v5 had a
   button for this; v6 only had the typed commands (`xg reload` / `xgui

@@ -293,11 +293,11 @@ end
 
 -- A mob with a pinned room goes to that room, not to the best-guess one.
 --
--- priority_room has been written by 'xset mob priority' (and now by 'xset mob
--- express') since it was added, and read by nothing at all -- the routing kept
--- using the highest-kill room, so pinning a room changed nothing. Overriding
--- the roomid here rather than at navigation time means the window, the hop
--- counts and 'xcp' all agree about where the target is.
+-- priority_room is written by 'xset mob express' (the standalone 'xset mob
+-- priority'/'unpriority' commands that used to write it too are gone --
+-- nobody used them apart from express, and they could desync from it).
+-- Overriding the roomid here rather than at navigation time means the
+-- window, the hop counts and 'xcp' all agree about where the target is.
 local function attach_priority_rooms(list)
     if not list or #list == 0 then return end
 
@@ -367,7 +367,51 @@ local function activity_level(cp_or_gq)
     return nil
 end
 
+-- Carry forward kills recorded since the list was last rebuilt from a real
+-- check.
+--
+-- build_area_targets / build_room_targets read cp_check_list / gq_check_list,
+-- which only reflects whichever mobs were still alive as of the last 'cp
+-- check' / 'cp info' -- a kill made through the plugin only ever marks
+-- main_target_list[i].is_dead = "yes" in memory (handle_mob_killed), with no
+-- way back into the check list. So any rebuild -- toggling 'xset express',
+-- or anything else that calls build_main_target_list -- silently resurrected
+-- every mob killed since the last real check.
+--
+-- Matched by (mob, arid), the same identity find_killed_target_by_last_mob
+-- already uses to record a kill in the first place.
+local function carry_forward_kills(old_list, new_list)
+    if not old_list or #old_list == 0 then return end
+    local prior = {}
+    for _, e in ipairs(old_list) do
+        local key = tostring(e.mob) .. "\0" .. tostring(e.arid)
+        prior[key] = { is_dead = e.is_dead, player_killed = e.player_killed, qty = e.qty }
+    end
+    for _, e in ipairs(new_list) do
+        local key = tostring(e.mob) .. "\0" .. tostring(e.arid)
+        local p = prior[key]
+        if p then
+            if p.is_dead == "yes" then
+                e.is_dead = "yes"
+                if p.player_killed then e.player_killed = true end
+            end
+            -- A lower remembered qty means kills happened since the list was
+            -- last rebuilt from a real check; never let a rebuild raise a
+            -- multi-kill gquest count back up.
+            local old_qty = tonumber(p.qty)
+            local new_qty = tonumber(e.qty)
+            if old_qty and new_qty and old_qty < new_qty then
+                e.qty = p.qty
+            end
+        end
+    end
+end
+
 function build_main_target_list(cp_or_gq, area_or_room)
+    -- Captured before anything below can reassign main_target_list, so any
+    -- kill recorded on it since the last real check survives this rebuild.
+    local _prev_main_target_list = main_target_list
+
     -- Room targets are filtered against the campaign level, so a room list
     -- built without one is either unfiltered or -- before the level was
     -- allowed to be unknown -- empty. Fetch the level the same way, and for
@@ -422,6 +466,7 @@ function build_main_target_list(cp_or_gq, area_or_room)
         ErrorNote("SnD: build_main_target_list: unknown area_or_room value: " .. tostring(area_or_room))
         return
     end
+    carry_forward_kills(_prev_main_target_list, main_target_list)
 
     -- A list was built, so whatever the recovery was for is over.
     _type_recovery_tried = false
@@ -1405,6 +1450,10 @@ function cp_check_end()
     build_main_target_list("cp", area_room_type)
     if type(xcp_retry)           == "function" then xcp_retry() end
     if type(print_cp_prediction) == "function" then print_cp_prediction() end
+    -- 'cp check' is a deliberate look back at the campaign, so it is one of
+    -- the two ways back to the cp tab after an explicit quest request took
+    -- it (see quest_status_gmcp) -- the other being switching by hand.
+    if type(xg_set_active_tab) == "function" then xg_set_active_tab("cp") end
 end
 
 -- ─── GQ INFO ─────────────────────────────────────────────────────────────────
@@ -1561,6 +1610,10 @@ function gq_check_end()
     current_activity = "gq"
     build_main_target_list("gq", area_room_type)
     if type(xcp_retry) == "function" then xcp_retry() end
+    -- 'gq check' is a deliberate look back at the gquest, so it is one of the
+    -- two ways back to the gq tab after an explicit quest request took it
+    -- (see quest_status_gmcp) -- the other being switching by hand.
+    if type(xg_set_active_tab) == "function" then xg_set_active_tab("gq") end
 end
 
 function player_is_on_gq()
@@ -1594,6 +1647,15 @@ function player_not_on_gq()
     if type(xg_update_target_list) == "function" then
         xg_update_target_list("gq", {})
     end
+    -- xg_update_target_list("gq", ...) always focuses the gq tab, even here,
+    -- where the gquest just ended and that tab is now the empty one. Move
+    -- focus to whatever is actually still happening instead of leaving the
+    -- window stuck on a blank tab -- this is also what makes single-tab mode
+    -- ('xset win tabs single') track the active activity correctly.
+    if type(xg_get_active_tab) == "function" and type(xg_set_active_tab) == "function"
+    and xg_get_active_tab() == "gq" then
+        xg_set_active_tab(player_on_cp == "yes" and "cp" or "quest")
+    end
     if player_on_cp ~= "yes" then
         main_target_list    = {}
         room_targets_ignored= {}
@@ -1620,6 +1682,12 @@ function player_not_on_cp()
     -- Always flush the CP window cache so the tab clears immediately.
     if type(xg_update_target_list) == "function" then
         xg_update_target_list("cp", {})
+    end
+    -- See the matching comment in player_not_on_gq: move focus off the tab
+    -- that just went empty instead of leaving it stuck there.
+    if type(xg_get_active_tab) == "function" and type(xg_set_active_tab) == "function"
+    and xg_get_active_tab() == "cp" then
+        xg_set_active_tab(player_on_gq == "yes" and "gq" or "quest")
     end
     if player_on_gq ~= "yes" then
         main_target_list    = {}
@@ -1787,6 +1855,16 @@ function quest_status_gmcp(q)
         next_quest_time = os.time() + quest_time * 60
     end
 
+    -- Which of the two tab behaviors this event calls for, if either:
+    --   explicit_request -- the player just typed 'quest' and got one. A
+    --     direct request deserves the tab, the same way 'xcp' earns it by
+    --     navigating -- not just a flash. Stays on the quest tab until the
+    --     player switches back themselves, or 'cp check'/'gq check' does.
+    --   ready_transition -- the cooldown lapsing on its own, with no action
+    --     from the player. See the flash-vs-switch note below.
+    local explicit_request = false
+    local ready_transition = false
+
     if q.action == "start" then
         history_start(HISTORY_TYPE_QUEST)
         quest_target = {
@@ -1797,6 +1875,7 @@ function quest_status_gmcp(q)
             room     = (q.room or ""):gsub("@[bcgmrwyBCDGMRWY]", ""),
         }
         target_quest_mob(true)
+        explicit_request = true
 
     elseif q.action == "status" and q.targ and q.timer then
         quest_target = {
@@ -1823,10 +1902,12 @@ function quest_status_gmcp(q)
     elseif q.action == "ready" or q.action == "timeout" then
         quest_target     = {qstat = "0"}
         next_quest_time  = os.time()
+        ready_transition = true
 
     elseif q.action == "status" and q.status == "ready" then
         next_quest_time  = os.time()
         quest_target     = {qstat = "0"}
+        ready_transition = true
 
     elseif q.action == "status" and q.wait then
         quest_target     = {qstat = "1"}
@@ -1847,15 +1928,20 @@ function quest_status_gmcp(q)
     -- becoming ready again, with no action from the player) yanked the
     -- miniwindow away from the GQ tab mid-global -- and there is nothing new
     -- to look at on the quest tab from a background event like that, so
-    -- there is nothing gained by switching. The quest_target data above is
-    -- still updated either way; only the forced tab switch is suppressed,
-    -- and only while a campaign or gquest is actually in progress. A player
-    -- not currently on either still gets the old behaviour.
+    -- there is nothing gained by switching. Only 'ready' actually calls for
+    -- a flash: a new target, a kill, or the quest ending mid-campaign are
+    -- all still just data updates with nothing new to look at either.
+    --
+    -- An explicit request is different again -- the player asked for this,
+    -- the same way 'xcp' earns the tab by navigating there, so it always
+    -- switches rather than merely flashing, even mid-campaign/gquest.
     local mid_activity = (player_on_cp == "yes") or (player_on_gq == "yes")
-    if mid_activity then
-        -- Can't switch the tab away from cp/gq, but the player should still
-        -- notice something happened on the quest tab -- flash it instead.
-        if type(xg_flash_quest_tab) == "function" then xg_flash_quest_tab() end
+    if explicit_request then
+        if type(xg_set_active_tab) == "function" then xg_set_active_tab("quest") end
+    elseif mid_activity then
+        if ready_transition and type(xg_flash_quest_tab) == "function" then
+            xg_flash_quest_tab()
+        end
     elseif type(xg_set_active_tab) == "function" then
         xg_set_active_tab("quest")
     end

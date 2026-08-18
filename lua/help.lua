@@ -46,11 +46,12 @@ local TOPICS = {
 
     {
         key      = "win",
-        aliases  = { "xset window", "xset fontsize", "xset linespace" },
+        aliases  = { "xset window", "xset fontsize", "xset linespace", "xset win tabs", "xset window tabs" },
         category = "Window & Display",
         syntax   = {
             "xset win <on|off|show|hide>",
             "xset win <max[imize]|min[imize]|expand|collapse>",
+            "xset win tabs [single|multi]",
             "xset winreset",
         },
         summary  = "Show, hide, resize, or reset the S&D miniwindow.",
@@ -62,6 +63,10 @@ local TOPICS = {
             {
                 heading = "xset win  max / expand  |  min / collapse",
                 text    = "'min'/'collapse' rolls the window up to just beneath the tab and TNL bar -- the target list and status bar are hidden, tabs and TNL/NX status stay visible -- and remembers the height it was at. 'max'/'expand' restores that height. This is not the 'Auto-Expand List' setting from the right-click menu, which controls whether the target list itself grows to fit its content or scrolls at a fixed height; the two are independent.",
+            },
+            {
+                heading = "xset win tabs [single|multi]",
+                text    = "'single' collapses quest/CP/GQ down to one tab that always shows whichever is currently active, instead of three you click between -- run with no argument, it reports which mode you're in. Bare 'xset win tabs' shows the current setting without changing it. Finishing a campaign or gquest while the other is still running moves the tab (single or not) to what's still active rather than leaving it on a blank one; with neither running, it falls back to the quest tab. The quest cooldown becoming ready again while a campaign or gquest has the tab still flashes it -- with no separate quest tab to point at in single mode, the one tab you have flashes instead. Requesting a quest yourself switches the one tab to show it outright, the same as in multi-tab mode.",
             },
             {
                 heading = "xset winreset",
@@ -77,7 +82,11 @@ local TOPICS = {
             },
             {
                 heading = "The quest tab flashing",
-                text    = "A quest event (a new target, a kill, the cooldown becoming ready again) no longer switches you away from an in-progress campaign or gquest -- but the quest tab still briefly flashes a configurable color ('Quest Ready Flash' in 'snd settings') for about 5 seconds so it isn't missed. Switching to the quest tab yourself, by click or by command, stops the flash immediately.",
+                text    = "The quest cooldown becoming ready again no longer switches you away from an in-progress campaign or gquest -- the quest tab briefly flashes a configurable color ('Quest Ready Flash' in 'snd settings') for about 5 seconds instead, so it isn't missed. A new quest target, a kill, or the quest ending are all just data updates with nothing new to look at yet, so none of those flash or switch -- only the tab becoming available to quest again does. Switching to the quest tab yourself, by click or by command, stops the flash immediately.",
+            },
+            {
+                heading = "Requesting a quest mid-campaign/gquest",
+                text    = "Unlike a passive quest event, typing the quest-request command yourself is a deliberate action -- it switches straight to the quest tab, the same way 'xcp' earns the tab by navigating there, rather than merely flashing. It stays on the quest tab until you switch back yourself, or 'cp check'/'gq check' does -- both are a deliberate look back at the campaign or gquest, so both return the tab to it.",
             },
         },
         see_also = { "silent", "sound", "xg" },
@@ -253,6 +262,9 @@ local TOPICS = {
         sections = {
             {
                 text = "Moves you to the next (or with '-', the previous) room in the active room search result list.  The action taken on arrival is controlled by 'xset nx'.",
+            },
+            {
+                text = "If the target you 'xcp'd to is express, that xcp never auto-fired your 'xcp mode' action on arrival — but 'nx' does, once it moves you to one of the other rooms sharing that name, since reaching for 'nx' at all means the mob was not where express expected it.",
             },
         },
         see_also = { "go", "xset nx", "xm|xmall|rlh" },
@@ -563,7 +575,10 @@ local TOPICS = {
                 text    = "Do nothing — just arrive, and find the mob yourself.",
             },
             {
-                text = "This applies however 'xcp' got you there: an express jump to a room you have killed the mob in, the room the campaign named, or the entrance of an area.  The first two aim at one room, which is where the mob was rather than where it necessarily is, so this is what looks for it when it has moved.",
+                text = "This fires automatically on arrival at a room-CP target (the room the campaign named) or an area-CP target (the area entrance).  Both aim at where the mob was rather than where it necessarily is, so this is what looks for it if it has moved.",
+            },
+            {
+                text = "An express target is different: the room is already a specific, remembered kill spot, so nothing fires automatically on arrival there.  If the mob is not in that room, run 'ht' or 'qw' yourself, or use 'nx' to check the other rooms sharing that name — 'nx' fires this same mode automatically once it moves you to one of them.",
             },
         },
         see_also = { "xcp", "ht", "qw" },
@@ -853,8 +868,7 @@ local TOPICS = {
             "mob nohunt",     "xset mob nohunt",
             "mob noscan",     "xset mob noscan",
             "mob express",    "xset mob express",
-            "mob priority",   "xset mob priority",
-            "mob unpriority", "xset mob unpriority",
+            "mob unexpress",  "xset mob unexpress",
             "mob tags",       "xset mob tags",
             "mob clearflags", "xset mob clearflags",
             "mob difficulty", "xset mob difficulty",
@@ -870,8 +884,7 @@ local TOPICS = {
             "xset mob express <mob>                   (toggle express for named mob in current zone)",
             "xset mob express <mob> here              (same as above — explicit current room)",
             "xset mob express <mob> <roomid>          (toggle express for named mob in specific room)",
-            "xset mob priority <mob>           (set current room as priority for mob)",
-            "xset mob unpriority <mob>         (clear priority room for mob)",
+            "xset mob unexpress <mob>          (force express off and clear its room, without touching other flags)",
             "xset mob difficulty                      (show current target's rating)",
             "xset mob difficulty <0-5>                (rate current target; 0 clears)",
             "xset mob difficulty <0-5> <mob>          (rate a named mob in current zone)",
@@ -903,11 +916,11 @@ local TOPICS = {
             },
             {
                 heading = "express",
-                text    = "Forces this mob to always use express navigation in the current zone, regardless of kill count or the global express threshold.  Use this when you already know exactly where a mob spawns but haven't killed it enough times for the automatic express threshold to kick in.\n\nWith no arguments, uses your currently targeted mob and sets the express room to the room you are in.  With a mob name only (or with 'here' appended), sets the express room to your current location.  With a mob name and a room ID, sets the express room to that specific room — useful for scripting or setting rooms you are not currently in.",
+                text    = "Forces this mob to always use express navigation in the current zone, regardless of kill count or the global express threshold.  Use this when you already know exactly where a mob spawns but haven't killed it enough times for the automatic express threshold to kick in.\n\nWith no arguments, uses your currently targeted mob and sets the express room to the room you are in.  With a mob name only (or with 'here' appended), sets the express room to your current location.  With a mob name and a room ID, sets the express room to that specific room — useful for scripting or setting rooms you are not currently in.  Running it again on an already-express mob toggles it off, as long as you are in the same zone it was set in; 'unexpress' below is the reliable way to clear it from anywhere.\n\n'xcp' on an express mob only walks you to its known room and loads it as your target — it never auto-hunts or auto-'where's on arrival, since the room is already known.  If the mob is not there, run 'ht' or 'qw' yourself, or use 'nx' to cycle the other rooms sharing that name, which does fire your 'xcp mode' action automatically.",
             },
             {
-                heading = "priority / unpriority",
-                text    = "Sets or clears a priority room for the mob.  When S&D has multiple rooms to choose from, the priority room is always shown first, regardless of sighting or kill counts.  The priority room is the room you are in when you type the command.",
+                heading = "unexpress <mob>",
+                text    = "Forces the express flag off for the named mob in the current zone and clears its pinned room, without touching any of its other flags or its difficulty rating.  Unlike running 'xset mob express' again, this always turns it off — it is not a toggle, so it cannot accidentally turn express back on.",
             },
             {
                 heading = "tags [zone]",
@@ -1083,12 +1096,13 @@ local TOPICS = {
 
     {
         key      = "snd changelog",
-        aliases  = { "changelog", "snd changelog all", "snd changelog since" },
+        aliases  = { "changelog", "snd changelog all", "snd changelog since", "snd changelog auto" },
         category = "System",
         syntax   = {
             "snd changelog                  (what changed since your version)",
             "snd changelog all              (the complete history)",
             "snd changelog since <version>  (everything newer than <version>)",
+            "snd changelog auto [on|off]    (show it automatically on update?)",
         },
         summary  = "See what changed, since your version or in full.",
         sections = {
@@ -1105,6 +1119,10 @@ local TOPICS = {
             {
                 heading = "snd changelog since <version>",
                 text    = "Everything newer than the version you name, e.g. 'snd changelog since 6.0'. Useful when helping someone else work out what changed between their install and yours. The version must be a dotted number.",
+            },
+            {
+                heading = "snd changelog auto [on|off]",
+                text    = "Whether the automatic notice on update happens at all. On by default. Turning it off does not lose anything -- 'snd changelog' still shows everything since the version you actually last saw, whenever you ask for it, even after several updates went by unannounced.",
             },
         },
         see_also = { "snd update", "snd reload", "snd check_update" },
