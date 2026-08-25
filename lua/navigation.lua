@@ -398,7 +398,7 @@ end
 -- Alias handler: 'go [<index>]'
 -- With no index: navigate to gotoList[1] if the list is populated; otherwise
 --   navigate to the current CP/GQ/quest target (room-link-aware).
--- With an index:  navigate to gotoList[index].
+-- With an index:  navigate to gotoList[index] (room-link-aware).
 function goto_number(name, line, wildcards)
     if not is_character_ready() then
         InfoNote(string.format("\nYou can't use 'go' while you're %s!", character_state_string()))
@@ -420,9 +420,28 @@ function goto_number(name, line, wildcards)
             set_going_to_room(get_start_room(dest, true))
             xrun_to(dest, true)
         else
+            -- 'go <N>' walked straight to gotoList[N] with no link check --
+            -- the room-link awareness above only ever covers the empty-
+            -- gotoList fallback to go_to_current_target(), and in normal
+            -- play (xcp -> arrival search populates gotoList -> go) that
+            -- list is always already populated by the time 'go' runs, so
+            -- this branch is what every real 'go'/'go <N>' actually takes.
             next_room = dest
-            set_going_to_room(next_room)
-            goto_room_id(next_room)
+            local link_near = find_room_link_near(dest)
+            if link_near then
+                _go_link_near_roomid = link_near
+                _go_link_far_roomid  = tonumber(dest)
+                _go_link_far_arid    = gotoArea
+                set_going_to_room(tonumber(dest))
+                InfoNote(string.format(
+                    "SnD: Target room %d is behind a link — navigating to entrance %d first.",
+                    tonumber(dest), link_near))
+                goto_room_id(tostring(link_near), gotoArea)
+                execute_in_room(link_near, go_link_arrived_at_near_side)
+            else
+                set_going_to_room(next_room)
+                goto_room_id(next_room)
+            end
         end
     elseif next(gotoList) == nil then
         -- gotoList was cleared (e.g., area-type target navigation or stale hyperlink);
@@ -691,13 +710,22 @@ function xcp_goto_target(index)
         -- player had already solved the maze with cexits and a link, and
         -- 'go'/'qw' could already get there. Reported by a player with
         -- exactly that setup on coral's entrance maze.
+        --
+        -- The rlink check itself used to be gated behind is_maze_room(),
+        -- which meant a genuinely configured link for a room that is
+        -- unreachable for some OTHER reason (a locked door, a portal-only
+        -- room) was still ignored. A configured link is a deliberate,
+        -- opt-in answer from the player, so it is checked first and
+        -- unconditionally now -- go's own check never had this
+        -- restriction either. is_maze_room() only decides the fallback
+        -- when no link exists at all.
         local use_area_fallback = false
         local link_near = nil
         if not t.roomid or tonumber(t.roomid) == nil or tonumber(t.roomid) == 0 then
             use_area_fallback = true
-        elseif type(is_maze_room) == "function" and is_maze_room(t.roomid) then
+        else
             link_near = find_room_link_near(t.roomid)
-            if not link_near then
+            if not link_near and type(is_maze_room) == "function" and is_maze_room(t.roomid) then
                 use_area_fallback = true
             end
         end
@@ -801,9 +829,29 @@ function xcp_goto_target(index)
         end
 
         if rid then
-            set_xcp_arrival_action(arrival)
-            set_going_to_room(tonumber(rid))
-            goto_room_id(rid, t.arid)
+            -- A room-CP target can have a configured 'xset rlink' too, the
+            -- same way an express target can (see above) -- go_to_current_target
+            -- ('go') already honors one unconditionally for a CP/GQ room;
+            -- this branch never checked at all, so 'xcp' walked straight to
+            -- the named room even when the mapper could not actually path
+            -- there directly and a link had been solved for it.
+            local link_near = find_room_link_near(tonumber(rid))
+            if link_near then
+                set_xcp_arrival_action(arrival)
+                _go_link_near_roomid = link_near
+                _go_link_far_roomid  = tonumber(rid)
+                _go_link_far_arid    = t.arid
+                set_going_to_room(tonumber(rid))
+                InfoNote(string.format(
+                    "SnD: Target room %s is behind a link — navigating to entrance %d first.",
+                    rid, link_near))
+                goto_room_id(tostring(link_near), t.arid)
+                execute_in_room(link_near, go_link_arrived_at_near_side)
+            else
+                set_xcp_arrival_action(arrival)
+                set_going_to_room(tonumber(rid))
+                goto_room_id(rid, t.arid)
+            end
             next_room = rid
         end
     end

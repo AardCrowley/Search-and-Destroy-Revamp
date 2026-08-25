@@ -1,3 +1,62 @@
+# v6.0.6-dev
+
+**A development build.**  Nothing here is in a public release yet.  Run
+`snd version` to see whether you are on one of these.
+
+## Bug Fixes
+
+- **Fixed: `xcp` ignored a configured `xset rlink` for a room-named campaign
+  target, and for an express target whose room wasn't flagged as a maze.**
+  `go_to_current_target` ('go') has always honored any configured link
+  unconditionally; `xcp_goto_target` only ever checked one for an express
+  target, and only when the mapper's own data flagged that room as a maze
+  room — a room-CP target never checked at all, and an express target
+  behind some other kind of obstacle (a locked door, a portal-only room)
+  with a genuinely configured link still got ignored. Both routes now check
+  for a link first, unconditionally, before falling back to the area
+  entrance — matching what `go` already did.
+
+- **Fixed: `go`/`go <N>` also ignored a configured `xset rlink` — the case
+  that matters most, since it's what actually runs for every real `go` once
+  `xcp`'s own arrival search has populated the room list.** The link-aware
+  routing in `go_to_current_target` only ever covers the case where that
+  list is still empty; in normal play (`xcp` → arrival search populates the
+  list → `go`) it never is by the time `go` runs, so the indexed branch —
+  which walked straight to the destination with no link check at all — is
+  what every real `go` took. Same fix as above: check for a link first,
+  unconditionally, before walking straight there.
+  Reported upstream with a full root-cause writeup and a working PR by
+  **tonybustamante**.
+
+- **Fixed: `xcp` could report "no reachable targets" right after switching
+  to a campaign or gquest that still had live ones.** Finishing one of two
+  simultaneous activities (a gquest completing while a campaign is still
+  running, or vice versa) already moved the miniwindow's tab focus to
+  whichever was still active — but `main_target_list` and `current_activity`
+  stayed pointed at the one that just ended, so `xcp` kept iterating its
+  now-empty list. Ending either one now rebuilds the target list for
+  whichever is still running, the same way switching to its tab by hand
+  already does.
+
+## New
+
+- **`cp reroll <n>` now sends the number the game actually means.**
+  Oracles' premonition skill rerolls one campaign target by its position in
+  the game's *original* numbering — not the route-optimized order S&D
+  displays the list in, which routinely disagrees with it. `cp reroll <n>`
+  now translates `<n>` automatically, using the numbered list Oracles are
+  shown on taking a new campaign. If S&D can't confirm the translation, it
+  refuses rather than guessing, and shows you the original numbered list so
+  you can read the right number off yourself. `campaign reroll <n>` (the
+  full word) is a deliberate escape hatch that is never translated.
+
+- **Right-click a target list row for its own settings.**  Every per-mob and
+  per-area command S&D has — nohunt, nowhere, noscan, levelok, difficulty,
+  express — used to be CLI-only, and assumed you were standing in the
+  target's own zone. A right-click on any row now opens a menu of the same
+  settings, scoped to that row's own mob and area regardless of where you
+  actually are. Campaign rows also get a premonition reroll option.
+
 # v6.0.5
 
 ## Bug Fixes
@@ -63,6 +122,48 @@
   the real target room, which succeeds when `cexits` give the mapper a
   genuine path through what would otherwise be an untrustworthy maze — and
   only falls back to the area entrance when no link is configured.
+## New
+
+- **The default express kill-count threshold is now 3, up from 2.**  Express
+  is meant for a mob you can confidently point at one specific room; 2 kills
+  in the same room was flagging some mobs express too eagerly. Still fully
+  configurable with `xset express <number>` — this only changes what a fresh
+  install, or a character who never touched the setting, starts with.
+
+- **`xset mob unexpress <mob>` — remove express from one mob without
+  clearing everything else.**  The only prior way to remove express from a
+  single mob was `clearflags`, which wipes every other flag and the
+  difficulty rating along with it. `unexpress` forces express off and clears
+  its pinned room, leaving everything else untouched — and unlike running
+  `xset mob express` again, it always turns it off rather than toggling
+  (which only undoes a set made from the same zone it was set in).
+  `xset mob priority`/`unpriority` are gone: they set/cleared the same
+  pinned-room data `express` already writes, nobody used them on their own,
+  and `unpriority` alone could silently strip an express mob's destination
+  room while leaving express on. `express` is now the only thing that ever
+  sets a pinned room.
+
+- **`xset win tabs single` — one tab instead of three.**  Collapses quest,
+  CP, and GQ down to a single tab that always shows whichever is currently
+  active, instead of three you click between.  `xset win tabs multi` goes
+  back to the usual three; bare `xset win tabs` reports which you're in.
+  Also available from the right-click menu.  Finishing a campaign or gquest
+  while the other is still running moves the tab to what's still active
+  instead of leaving it on a now-empty one — true in multi-tab mode too, but
+  it's what makes single-tab mode actually track the active activity rather
+  than getting stuck.  A quest event with no separate quest tab to flash
+  flashes the one tab you have instead.
+
+- **`snd changelog auto [on|off]` — turn off the automatic notice on
+  update.**  On by default, same as always: the changelog since your last
+  version shows once, automatically, the first time a new version loads.
+  Turning it off doesn't lose anything — `snd changelog`, run by hand, still
+  shows everything since the version you actually last saw, even after
+  several updates went by unannounced.
+
+# v6.0.4
+
+## Bug Fixes
 
 - **Fixed: `xcp mode ht` could cancel its own `where` the moment a hunt
   trick had escalated past the first same-named mob.**  Arriving at the
@@ -269,43 +370,6 @@
   kept either way.
 
 ## New
-
-- **The default express kill-count threshold is now 3, up from 2.**  Express
-  is meant for a mob you can confidently point at one specific room; 2 kills
-  in the same room was flagging some mobs express too eagerly. Still fully
-  configurable with `xset express <number>` — this only changes what a fresh
-  install, or a character who never touched the setting, starts with.
-
-- **`xset mob unexpress <mob>` — remove express from one mob without
-  clearing everything else.**  The only prior way to remove express from a
-  single mob was `clearflags`, which wipes every other flag and the
-  difficulty rating along with it. `unexpress` forces express off and clears
-  its pinned room, leaving everything else untouched — and unlike running
-  `xset mob express` again, it always turns it off rather than toggling
-  (which only undoes a set made from the same zone it was set in).
-  `xset mob priority`/`unpriority` are gone: they set/cleared the same
-  pinned-room data `express` already writes, nobody used them on their own,
-  and `unpriority` alone could silently strip an express mob's destination
-  room while leaving express on. `express` is now the only thing that ever
-  sets a pinned room.
-
-- **`xset win tabs single` — one tab instead of three.**  Collapses quest,
-  CP, and GQ down to a single tab that always shows whichever is currently
-  active, instead of three you click between.  `xset win tabs multi` goes
-  back to the usual three; bare `xset win tabs` reports which you're in.
-  Also available from the right-click menu.  Finishing a campaign or gquest
-  while the other is still running moves the tab to what's still active
-  instead of leaving it on a now-empty one — true in multi-tab mode too, but
-  it's what makes single-tab mode actually track the active activity rather
-  than getting stuck.  A quest event with no separate quest tab to flash
-  flashes the one tab you have instead.
-
-- **`snd changelog auto [on|off]` — turn off the automatic notice on
-  update.**  On by default, same as always: the changelog since your last
-  version shows once, automatically, the first time a new version loads.
-  Turning it off doesn't lose anything — `snd changelog`, run by hand, still
-  shows everything since the version you actually last saw, even after
-  several updates went by unannounced.
 
 - **A [R] title-bar button re-fetches CP/GQ info with a click.**  v5 had a
   button for this; v6 only had the typed commands (`xg reload` / `xgui

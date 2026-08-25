@@ -1286,11 +1286,21 @@ function snd_info_reset_click(flags, hotspot_id)
 end
 
 function snd_row_click(flags, hotspot_id)
+    local right_click = bit.band(flags, miniwin.hotspot_got_rh_mouse) ~= 0
     if hotspot_id == "snd_row_q" then
-        Execute("xqt")
+        if right_click then
+            snd_row_right_click_menu(nil)
+        else
+            Execute("xqt")
+        end
+        return
+    end
+    local idx = hotspot_id:match("^snd_row_(%d+)$")
+    if not idx then return end
+    if right_click then
+        snd_row_right_click_menu(tonumber(idx))
     else
-        local idx = hotspot_id:match("^snd_row_(%d+)$")
-        if idx then Execute("xcp " .. idx) end
+        Execute("xcp " .. idx)
     end
 end
 
@@ -1378,6 +1388,122 @@ function snd_win_resize_up()
 end
 
 -- ─── RIGHT-CLICK MENUS ───────────────────────────────────────────────────────
+
+-- Normalizes a main_target_list entry (idx is a number) or the quest row
+-- (idx is nil) into the shape snd_row_right_click_menu needs. The quest
+-- row's own record (quest_target) has no resolved room id of its own; one
+-- is only available when current_target currently reflects the quest.
+local function row_menu_entry(idx)
+    if idx then
+        return main_target_list[idx]
+    end
+    local qt = quest_target
+    if type(qt) ~= "table" or not qt.mob then return nil end
+    local roomid = nil
+    if type(current_target) == "table" and current_target.activity == "quest" then
+        roomid = current_target.roomid
+    end
+    return { mob = qt.mob, arid = qt.arid, roomid = roomid, link_type = "room" }
+end
+
+-- Right-click menu for one target list row (mob or quest). All actions
+-- operate on the row's own entry.mob/entry.arid -- never current_room --
+-- since a right-click can happen from anywhere, not just while standing in
+-- the target's own zone. No 'checked' markers: see the comment above
+-- snd_right_click_menu for why (WindowMenu's checked-item marker renders
+-- as disabled/unclickable for at least one player).
+function snd_row_right_click_menu(idx)
+    local entry = row_menu_entry(idx)
+    if not entry or not entry.mob or not entry.arid then return end
+
+    local has_nohunt  = mob_has_tag(entry.mob, entry.arid, "nohunt")
+    local has_nowhere = mob_has_tag(entry.mob, entry.arid, "nowhere")
+    local has_noscan  = mob_has_tag(entry.mob, entry.arid, "noscan")
+    local has_levelok = mob_has_tag(entry.mob, entry.arid, "levelok")
+    local has_express = mob_has_tag(entry.mob, entry.arid, "express")
+
+    local items = {
+        { action = "nohunt",
+          label  = (has_nohunt  and "Allow Hunt" or "Nohunt") },
+        { action = "nowhere",
+          label  = (has_nowhere and "Allow Where" or "Nowhere") },
+        { action = "noscan",
+          label  = (has_noscan  and "Allow Scan" or "Noscan") },
+        { action = "levelok",
+          label  = (has_levelok and "Unset Levelok" or "Set Levelok") },
+        { action = "sep" },
+        { action = "difficulty", label = "Set Difficulty..." },
+    }
+
+    if entry.roomid and tonumber(entry.roomid) and tonumber(entry.roomid) > 0 then
+        items[#items + 1] = { action = "express",
+            label = has_express and "Remove Express" or "Set Express" }
+    end
+
+    if entry.link_type == "area" then
+        items[#items + 1] = { action = "area_difficulty", label = "Set Area Difficulty..." }
+    end
+
+    if idx and current_activity == "cp" then
+        items[#items + 1] = { action = "sep" }
+        items[#items + 1] = { action = "reroll", label = "Reroll This Target (Premonition)" }
+    end
+
+    local parts, label_map = {}, {}
+    for _, it in ipairs(items) do
+        if it.action == "sep" then parts[#parts + 1] = "-"
+        else parts[#parts + 1] = it.label; label_map[it.label] = it.action end
+    end
+
+    local result = WindowMenu(win, WindowInfo(win, 14), WindowInfo(win, 15),
+                              table.concat(parts, "|"))
+    if not result or result == "" then return end
+    local action = label_map[result]
+
+    if     action == "nohunt"  then mob_toggle_tag(entry.mob, entry.arid, "nohunt")
+    elseif action == "nowhere" then mob_toggle_tag(entry.mob, entry.arid, "nowhere")
+    elseif action == "noscan"  then mob_toggle_tag(entry.mob, entry.arid, "noscan")
+    elseif action == "levelok" then mob_toggle_tag(entry.mob, entry.arid, "levelok")
+    elseif action == "difficulty" then
+        local cur = mob_get_difficulty(entry.mob, entry.arid)
+        local raw = utils.inputbox(
+            "Set difficulty for '" .. entry.mob .. "' (0-5, 0 clears it).",
+            "Mob Difficulty", tostring(cur), nil, 0,
+            { validate = function(s) return tonumber(s) ~= nil end })
+        if raw then
+            local n = math.floor(tonumber(raw))
+            n = math.max(0, math.min(5, n))
+            mob_set_difficulty(entry.mob, entry.arid, n)
+        end
+    elseif action == "express" then
+        if has_express then
+            mob_set_tags(entry.mob, entry.arid, { express = false })
+            mob_set_priority_room(entry.mob, entry.arid, nil)
+        else
+            mob_toggle_tag(entry.mob, entry.arid, "express")
+            mob_set_priority_room(entry.mob, entry.arid, tonumber(entry.roomid))
+        end
+    elseif action == "area_difficulty" then
+        local raw = utils.inputbox(
+            "Set difficulty for area '" .. entry.arid .. "' (1-5).",
+            "Area Difficulty", "1", nil, 0,
+            { validate = function(s) return tonumber(s) ~= nil end })
+        if raw then
+            local n = math.floor(tonumber(raw))
+            n = math.max(1, math.min(5, n))
+            area_edit(entry.arid, "difficulty", n)
+        end
+    elseif action == "reroll" then
+        send_cp_reroll(idx, entry)
+    end
+
+    if type(build_main_target_list) == "function"
+    and type(current_activity) == "string"
+    and (current_activity == "cp" or current_activity == "gq") then
+        build_main_target_list(current_activity, area_room_type)
+    end
+    if type(xg_draw_window) == "function" then xg_draw_window() end
+end
 
 function snd_tab_right_click_menu(key)
     local tab_names = { cp = "Campaign", gq = "Global Quest", quest = "Quest" }

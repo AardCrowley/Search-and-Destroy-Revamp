@@ -1662,8 +1662,115 @@ function player_not_on_gq()
         area_room_type      = "none"
         current_activity    = "none"
         if is_cp_or_gq_mob_targeted() then clear_target() end
+    else
+        -- A campaign is still running: the tab focus above already moved to
+        -- it, but main_target_list/current_activity were left pointed at
+        -- the gquest that just ended -- 'xcp' then iterated its now-empty
+        -- list and aborted with "no reachable targets" even though the
+        -- campaign the player is now looking at has live ones. Recompute
+        -- the type from cp_info_list rather than trusting area_room_type,
+        -- which may still hold whatever the gquest's own last check set it
+        -- to -- same lookup reconcile_activity_with_focused_tab uses.
+        current_activity = "cp"
+        if type(build_main_target_list) == "function"
+        and type(area_room_type_check) == "function" then
+            build_main_target_list("cp", area_room_type_check(cp_info_list))
+        end
     end
     if type(xg_draw_window) == "function" then xg_draw_window() end
+end
+
+-- Original campaign target numbering, captured from the Oracle premonition
+-- text shown unprompted on taking a new campaign (see the triggers in
+-- Search_and_Destroy.xml). 'campaign reroll #' only understands this
+-- numbering, not the route-optimized order main_target_list displays in --
+-- see cp_reroll_lookup (below) for the translation.
+cp_reroll_positions       = {}
+_cp_premonition_capturing = false
+
+-- Trigger handler: the premonition's header line. Starts a fresh capture,
+-- discarding anything a previous campaign left behind.
+function cp_premonition_start()
+    cp_reroll_positions       = {}
+    _cp_premonition_capturing = true
+end
+
+-- Trigger handler: one numbered line of the premonition list. A no-op
+-- outside an active capture, so an accidental pattern match elsewhere never
+-- records anything.
+function cp_premonition_body(name, line, wildcards)
+    if not _cp_premonition_capturing then return end
+    local w   = (type(wildcards) == "table" and wildcards) or {}
+    local num = tonumber(w.num)
+    if not num or not w.mob or not w.loc then return end
+    cp_reroll_positions[#cp_reroll_positions + 1] =
+        { num = num, mob = w.mob, loc = w.loc }
+end
+
+-- Trigger handler: the premonition's footer line. Closes the capture and
+-- says how many targets were recorded, matching this codebase's practice
+-- of narrating state changes that would otherwise be invisible.
+function cp_premonition_end()
+    if not _cp_premonition_capturing then return end
+    _cp_premonition_capturing = false
+    InfoNote("SnD: Captured original campaign order (" ..
+             #cp_reroll_positions .. " target(s)).")
+end
+
+-- Translates a mob name into its original campaign slot number ('campaign
+-- reroll #' only understands that numbering). Matches on mob name alone --
+-- see the plan/spec for why this is simpler and just as safe as matching on
+-- (mob, location). Returns slot, nil on an unambiguous match, or nil, reason
+-- ("no-data" | "ambiguous") otherwise -- never a guess.
+function cp_reroll_lookup(mob)
+    if not mob or mob == "" or #cp_reroll_positions == 0 then
+        return nil, "no-data"
+    end
+    local mob_lc = mob:lower()
+    local found, count = nil, 0
+    for _, p in ipairs(cp_reroll_positions) do
+        if type(p.mob) == "string" and p.mob:lower() == mob_lc then
+            count = count + 1
+            found = p.num
+        end
+    end
+    if count == 1 then return found, nil end
+    if count > 1  then return nil, "ambiguous" end
+    return nil, "no-data"
+end
+
+-- Translates and sends a campaign reroll for 'entry' (a main_target_list
+-- entry, or any table with at least a .mob field), which display_index
+-- names purely for the confirmation/refusal message. Shared by the 'cp
+-- reroll <n>' alias and the row right-click menu's reroll item.
+function send_cp_reroll(display_index, entry)
+    if not entry then
+        InfoNote("SnD: No target at position " .. tostring(display_index) .. ".")
+        return
+    end
+    local slot, reason = cp_reroll_lookup(entry.mob)
+    if not slot then
+        InfoNote("SnD: Can't confirm slot " .. tostring(display_index) ..
+                 "'s original campaign number.")
+        if reason == "ambiguous" then
+            InfoNote("SnD: More than one target shares that mob name in " ..
+                     "this campaign's premonition list.")
+        end
+        if #cp_reroll_positions > 0 then
+            InfoNote("SnD: Original campaign order:")
+            for _, p in ipairs(cp_reroll_positions) do
+                InfoNote(string.format("SnD:   %d - %s", p.num, tostring(p.mob)))
+            end
+        else
+            InfoNote("SnD: No premonition data captured for this campaign.")
+        end
+        InfoNote("SnD: Use 'campaign reroll <n>' (the full word) to send a " ..
+                 "raw, untranslated number directly.")
+        return
+    end
+    Send("cp reroll " .. slot)
+    InfoNote("SnD: Rerolling display slot " .. tostring(display_index) ..
+             " -> original campaign slot " .. slot .. " (" .. entry.mob .. ").")
 end
 
 function player_not_on_cp()
@@ -1679,6 +1786,8 @@ function player_not_on_cp()
     snd_set_setting("cp_level_taken", "0", false)
     cp_info_list  = {}
     cp_check_list = {}
+    cp_reroll_positions       = {}
+    _cp_premonition_capturing = false
     -- Always flush the CP window cache so the tab clears immediately.
     if type(xg_update_target_list) == "function" then
         xg_update_target_list("cp", {})
@@ -1695,6 +1804,16 @@ function player_not_on_cp()
         area_room_type      = "none"
         current_activity    = "none"
         if is_cp_or_gq_mob_targeted() then clear_target() end
+    else
+        -- A gquest is still running: mirrors the same fix in
+        -- player_not_on_gq -- the tab focus above already moved to it, but
+        -- main_target_list/current_activity were left pointed at the
+        -- campaign that just ended.
+        current_activity = "gq"
+        if type(build_main_target_list) == "function"
+        and type(area_room_type_check) == "function" then
+            build_main_target_list("gq", area_room_type_check(gq_info_list))
+        end
     end
     if type(xg_draw_window) == "function" then xg_draw_window() end
 end

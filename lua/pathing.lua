@@ -1446,7 +1446,7 @@ function xset_rlink(name, line, wildcards)
             end
         end
         InfoNote("SnD: Usage: xset rlink <room1> <room2> [<{note}>]")
-        InfoNote("SnD: Room IDs are from the mapper (use 'mapper where' to find them).")
+        InfoNote("SnD: Room IDs are from the mapper (use 'mapper thisroom' to find them).")
         return
     end
 

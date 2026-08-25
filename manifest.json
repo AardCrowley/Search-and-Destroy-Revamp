@@ -1,5 +1,5 @@
 {
-  "version": "6.0.5",
+  "version": "6.0.6-dev",
   "files": [
     {
       "file": "constants.lua",
@@ -43,13 +43,13 @@
     },
     {
       "file": "targets.lua",
-      "hash": "fc07423a",
-      "size": 83283
+      "hash": "871e9d04",
+      "size": 88726
     },
     {
       "file": "pathing.lua",
-      "hash": "927fd814",
-      "size": 68318
+      "hash": "aa5f96b2",
+      "size": 68321
     },
     {
       "file": "express.lua",
@@ -58,8 +58,8 @@
     },
     {
       "file": "navigation.lua",
-      "hash": "9fcc21a6",
-      "size": 63000
+      "hash": "86ce2320",
+      "size": 65794
     },
     {
       "file": "hunting.lua",
@@ -78,8 +78,8 @@
     },
     {
       "file": "window.lua",
-      "hash": "dff0bae2",
-      "size": 83121
+      "hash": "c4a05cb2",
+      "size": 88567
     },
     {
       "file": "settings_popup.lua",
@@ -88,8 +88,8 @@
     },
     {
       "file": "help.lua",
-      "hash": "b8175098",
-      "size": 96789
+      "hash": "3e8ec268",
+      "size": 98468
     },
     {
       "file": "changelog.lua",

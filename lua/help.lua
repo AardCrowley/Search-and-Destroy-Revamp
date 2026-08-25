@@ -81,6 +81,10 @@ local TOPICS = {
                 text    = "[x] hides the window, same as 'xset win off'. [R], shown on the CP and GQ tabs only, re-fetches that tab's info from the game -- the same as 'xg reload' as a click. There is nothing to re-fetch on the quest tab, which stays current on its own, so no button is shown there.",
             },
             {
+                heading = "Right-clicking a target list row",
+                text    = "Opens a menu of that row's own settings -- nohunt, nowhere, noscan, levelok, difficulty, and (when the row has a known room) express -- scoped to that mob and its area, not wherever you are currently standing. A campaign row also offers 'Reroll This Target (Premonition)', which does the same translation 'cp reroll <n>' does. An area-level row (no specific room known yet) also offers setting the area's own difficulty rating.",
+            },
+            {
                 heading = "The quest tab flashing",
                 text    = "The quest cooldown becoming ready again no longer switches you away from an in-progress campaign or gquest -- the quest tab briefly flashes a configurable color ('Quest Ready Flash' in 'snd settings') for about 5 seconds instead, so it isn't missed. A new quest target, a kill, or the quest ending are all just data updates with nothing new to look at yet, so none of those flash or switch -- only the tab becoming available to quest again does. Switching to the quest tab yourself, by click or by command, stops the flash immediately.",
             },
@@ -198,7 +202,7 @@ local TOPICS = {
         sections = {
             {
                 heading = "When you need one",
-                text    = "Most areas need no rlink at all, including most maze areas — only when a campaign or gquest names a SPECIFIC room the mapper cannot route to (most often one behind or inside a maze; see 'xset maze') does routing need help. Without a link, S&D falls all the way back to the area's start room for that target. A link gives it a substitute: room1 is the room that's actually hard to reach (the target's own room), room2 is a room the mapper CAN path to — typically the maze's entrance room itself. S&D then routes to room2 by mapper distance and treats you as arrived at room1 from there, on foot.",
+                text    = "Most areas need no rlink at all, including most maze areas — only when a campaign or gquest names a SPECIFIC room the mapper cannot route to (most often one behind or inside a maze; see 'xset maze') does routing need help. Without a link, S&D falls all the way back to the area's start room for that target. A link just pairs two rooms — order does not matter, and either one can be typed first. Whichever room S&D is actually trying to reach at the time, it looks up the other side of the pair and routes to that one by mapper distance first, then treats you as arrived at the target from there, on foot.",
             },
             {
                 heading = "xset rlink",
@@ -206,7 +210,7 @@ local TOPICS = {
             },
             {
                 heading = "xset rlink <room1> <room2>",
-                text    = "Toggles a link between two room IDs.  If the link already exists it is removed; if it does not exist it is added.  Room IDs come from the mapper — use 'mapper where' or 'xm <name>' to find them.",
+                text    = "Toggles a link between two room IDs.  If the link already exists it is removed; if it does not exist it is added.  Room IDs come from the mapper — use 'mapper thisroom' or 'xm <name>' to find them.",
             },
             {
                 heading = "xset rlink <room1> <room2> {note}",
@@ -582,6 +586,22 @@ local TOPICS = {
             },
         },
         see_also = { "xcp", "ht", "qw" },
+    },
+
+    {
+        key      = "cp reroll",
+        category = "Campaign & Quest",
+        syntax   = { "cp reroll <n>", "campaign reroll <n>" },
+        summary  = "Reroll one campaign target using the Oracle premonition skill.",
+        sections = {
+            {
+                text = "'<n>' means the target's position in S&D's displayed list, which is reordered for route efficiency -- not the game's own original numbering, which is what 'campaign reroll' actually understands. 'cp reroll <n>' translates automatically, using the numbered list Oracles are shown on taking a new campaign (the premonition text). If S&D can't confirm the translation for a target, it refuses rather than guessing, and shows you the original numbered list so you can read the right number off yourself.",
+            },
+            {
+                text = "'campaign reroll <n>' (the full word) is a deliberate escape hatch: it is never translated, and always sends exactly the number you type. Use it once you already know the game's own number for a target.",
+            },
+        },
+        see_also = { "xcp", "cp|gq" },
     },
 
     {

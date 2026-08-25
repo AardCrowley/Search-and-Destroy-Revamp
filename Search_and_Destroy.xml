@@ -232,7 +232,7 @@ table_width = 80
 -- Keep it in step with the VERSION file; tests/version_consistency_test.lua
 -- fails the build if they disagree, and checks the attribute is the
 -- major.minor of it.
-SND_VERSION = "6.0.5"
+SND_VERSION = "6.0.6-dev"
 
 -- snd_version() also exists in constants.lua, for the modules to call: modules
 -- are updated by 'snd update' while this file is not, so a module calling a
@@ -3520,6 +3520,20 @@ end
 
 -- ─── Mob flag handlers ────────────────────────────────────────────────────────
 
+-- Alias handler: 'cp reroll <n>'. Translates n from S&D's route-optimized
+-- display position to the game's original campaign numbering via
+-- send_cp_reroll (targets.lua). 'campaign reroll <n>' (the full word) is
+-- deliberately a separate, un-intercepted command -- see the plan.
+function xset_cp_reroll(name, line, wildcards)
+    local w = (type(wildcards) == "table" and wildcards) or {}
+    local n = tonumber(w.n)
+    if not n then
+        InfoNote("Usage: cp reroll <n>")
+        return
+    end
+    send_cp_reroll(n, main_target_list[n])
+end
+
 function xset_mob_nowhere(name, line, wildcards)
     local w   = (type(wildcards) == "table" and wildcards) or {}
     local mob  = Trim(w["mob"] or "")
@@ -4878,7 +4892,8 @@ local _snd_subroutines = {
     "auto_hunt_door_open", "auto_hunt_lowskill", "auto_hunt_next", "auto_hunt_noarg",
     "auto_hunt_portal", "changelog_auto", "changelog_since", "consider_end", "consider_mob_line",
     "consider_unkillable", "copyPwarDB", "copyPwarWarn", "cp_check_can_get_new_cp",
-    "cp_check_cannot_get_new_cp", "cp_mob_killed", "do_cp_check", "do_cp_complete",
+    "cp_check_cannot_get_new_cp", "cp_mob_killed", "cp_premonition_body", "cp_premonition_end",
+    "cp_premonition_start", "do_cp_check", "do_cp_complete",
     "do_cp_info", "do_cp_quit", "do_gq_check", "do_gq_info",
     "do_xwhere", "echo_gqid_joined", "goto_next", "goto_number",
     "goto_previous", "gq_check_not_yet_started", "gq_end_failed", "gq_ended",
@@ -4906,7 +4921,7 @@ local _snd_subroutines = {
     "xset_area_edit_lock", "xset_area_edit_max", "xset_area_edit_min", "xset_area_edit_name",
     "xset_area_edit_noquest", "xset_area_edit_start", "xset_area_edit_vidblain", "xset_area_list",
     "xset_area_list_unset", "xset_autonav", "xset_autoreload", "xset_cols",
-    "xset_con_overwrite",
+    "xset_con_overwrite", "xset_cp_reroll",
     "xset_debug", "xset_express", "xset_gqalias", "xset_import_area_vars", "xset_kw",
     "xset_kw_list", "xset_kw_fix",
     "xset_index_areas", "xset_level_area", "xset_level_area_reset", "xset_level_buffer",
@@ -5006,6 +5021,16 @@ end
         <trigger match="^You (?:will have to level before you can go on another campaign|cannot take another campaign for (?:(?:\d+ hours?, )?\d+ minutes? and )?\d+ seconds?)\.$" name="trg_cannot_get_new_cp" group="trg_cp_2" script="cp_check_cannot_get_new_cp" enabled="y" regexp="y" sequence="100" keep_evaluating="y"></trigger>
 
         <trigger match="^You use a daily blessing campaign reset token to reset your campaign\.$" name="trg_cp_reset_token" group="trg_cp_2" script="" enabled="y" regexp="y" sequence="100" keep_evaluating="y" omit_from_output="n" send_to="12"></trigger>
+
+        <!-- Oracle premonition capture: the game's original campaign target
+             numbering, needed to translate 'cp reroll <n>' (see cp_reroll_lookup
+             in targets.lua). Always enabled; the handlers no-op outside an
+             active capture. -->
+        <trigger match="^You see a premonition of your campaign targets\.*$" script="cp_premonition_start" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^(?<num>\d+) - You still have to kill \* (?<mob>.+) \((?<loc>.+)\)\.?$" script="cp_premonition_body" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
+
+        <trigger match="^Your premonition will not last for long\." script="cp_premonition_end" enabled="y" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
 
         <!-- QUICK WHERE -->
         <trigger match="^(?<mobname>.{30}) (?<roomname>[^ (0-9].*)$" script="qw_match" name="trg_quick_where_match" group="QuickWhere" enabled="n" regexp="y" sequence="100" keep_evaluating="y" send_to="12"></trigger>
@@ -5179,6 +5204,8 @@ end
         <alias match="^cp (?:i|info)$" script="do_cp_info" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <alias match="^cp (?:ch|check)$" script="do_cp_check" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
+
+        <alias match="^cp reroll (?<n>\d+)$" script="xset_cp_reroll" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
 
         <!-- gquest data input: gq info, check -->
         <alias match="^gq i(?:n(?:fo?)?)?$" script="do_gq_info" enabled="y" regexp="y" sequence="100" ignore_case="y" send_to="12"></alias>
