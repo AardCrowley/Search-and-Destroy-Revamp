@@ -470,6 +470,11 @@ function goto_next(name, line, wildcards)
     gotoIndex = math.max(1, gotoIndex)
     local dest = gotoList[gotoIndex]
     if dest then
+        if tonumber(dest) == tonumber(next_room)
+        and tonumber(dest) ~= tonumber(gmcp("room.info.num")) then
+            DebugNote("SnD: Ignored duplicate nx route to room " .. tostring(dest))
+            return
+        end
         InfoNote("SnD: nx — " .. gotoIndex .. " of " .. #gotoList)
         next_room = dest
         nx_arrival_xcp_action()
@@ -495,6 +500,11 @@ function goto_previous(name, line, wildcards)
     end
     local dest = gotoList[gotoIndex]
     if dest then
+        if tonumber(dest) == tonumber(next_room)
+        and tonumber(dest) ~= tonumber(gmcp("room.info.num")) then
+            DebugNote("SnD: Ignored duplicate nx- route to room " .. tostring(dest))
+            return
+        end
         InfoNote("SnD: nx- — " .. gotoIndex .. " of " .. #gotoList)
         next_room = dest
         nx_arrival_xcp_action()
