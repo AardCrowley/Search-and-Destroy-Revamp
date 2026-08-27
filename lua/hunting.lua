@@ -15,6 +15,7 @@ HUNT_INDEX_LIMIT = 101
 
 -- Quick-where state.
 qw  = {index=1, exact=false, match=nil}
+qw_generation = 0
 
 -- Set to true by smart_scan when performing a target-aware scan.
 running_smart_scan = false
@@ -24,26 +25,7 @@ running_smart_scan = false
 function qw_reset(exact)
     EnableTrigger("trg_quick_where_match",    false)
     EnableTrigger("trg_quick_where_no_match", false)
-    -- active=false is what actually stops the sequence. Disabling the triggers
-    -- does not retract the lines MUSHclient has already taken off the socket:
-    -- 'where <mob>' answers with one line per room, and every line after the
-    -- one that matched still reaches this handler. By then qw.match has been
-    -- cleared, so each of those lines compares against an empty name, reads as
-    -- "not found", and sends the next 'where N.mob' -- which is why the
-    -- command kept going after it had plainly found the mob, and why the tail
-    -- of it was a run of "There is no N.<mob> around here."
-    -- Anything past the first query may still be sitting in the MUD's command
-    -- queue, and those answers arrive whether or not we still want them --
-    -- that run of "There is no N.<mob> around here." at the end. 'stop' drops
-    -- the queue, so the sequence ends where it was decided rather than where
-    -- the server happens to catch up.
-    --
-    -- Only when we actually escalated: a mob found on the first 'where' has
-    -- nothing queued behind it, and an unprompted 'stop' would cancel whatever
-    -- the player had lined up themselves.
-    if qw.active and (tonumber(qw.index) or 1) > 1 then
-        SendNoEcho("stop")
-    end
+    EnableTrigger("trg_quick_where_too_complex", false)
     qw = {index=1, exact=exact or false, active=false}
 end
 
@@ -95,15 +77,119 @@ function qw_exact()
     do_quick_where(qw.index or 1, current_target.keyword)
 end
 
-function do_quick_where(ix, s)
-    EnableTrigger("trg_quick_where_match",    true)
-    EnableTrigger("trg_quick_where_no_match", true)
-    qw.active = true
-    if ix == 1 then
-        Send(string.format("where %s", s))
-    else
-        Send(string.format("where %s.%s", ix, s))
+local function qw_mob_matches(mob_lower)
+    if qw.exact then
+        return mob_lower == (qw.match or ""):lower():sub(1, 30)
     end
+
+    local parts = split((snd_target_keyword() or ""):lower(), "[^ ]+")
+    for _, p in ipairs(parts) do
+        if string.find(mob_lower, p, 1, true) then return true end
+    end
+    return false
+end
+
+local function qw_captured_line_text(line_styles)
+    local parts = {}
+    for _, run in ipairs(line_styles) do
+        if run.text then parts[#parts+1] = run.text end
+    end
+    return table.concat(parts)
+end
+
+local function qw_captured_where_line(text)
+    if #text < 32 or text:sub(31, 31) ~= " " then return nil end
+    local room = text:sub(32)
+    if room == "" or room:match("^[%s%(0-9]") then return nil end
+    return text:sub(1, 30), room
+end
+
+local function qw_capture_timeout(generation)
+    return function()
+        if not qw.active or qw.generation ~= generation then return end
+        local exact = qw.exact
+        qw_reset(exact)
+        ErrorNote("SnD: Quick-where timed out; no commands were canceled.")
+    end
+end
+
+local function qw_capture_complete(captured_styles, generation)
+    if not qw.active or qw.generation ~= generation then return end
+
+    local saw_where_line = false
+    for _, line_styles in ipairs(captured_styles) do
+        local text = qw_captured_line_text(line_styles)
+        if text == "There are too many doors and fences to see who is in this area." then
+            qw_area_too_complex()
+            return
+        end
+        if text:match("^There is no .+ around here%.$") then
+            qw_no_match()
+            return
+        end
+
+        local mobname, roomname = qw_captured_where_line(text)
+        if mobname then
+            saw_where_line = true
+            if qw_mob_matches(Trim(mobname):lower()) then
+                qw_match("", text, {mobname=mobname, roomname=roomname})
+                return
+            end
+        end
+    end
+
+    if not saw_where_line then
+        local exact = qw.exact
+        qw_reset(exact)
+        ErrorNote("SnD: Quick-where received an unexpected response.")
+        return
+    end
+
+    local nxt = (qw.index or 1) + 1
+    if nxt >= HUNT_INDEX_LIMIT then
+        DebugNote("SnD: qw: too many iterations, giving up.")
+        qw_reset(qw.exact)
+        return
+    end
+    local kw = snd_target_keyword()
+    if not kw then
+        InfoNote("SnD: no keyword for the current target -- set one with 'xset kw'.")
+        qw_reset(qw.exact)
+        return
+    end
+    do_quick_where(nxt, kw, generation)
+end
+
+function do_quick_where(ix, s, generation)
+    ix = ix or 1
+    if generation == nil then
+        qw_generation = qw_generation + 1
+        generation = qw_generation
+    elseif not qw.active or qw.generation ~= generation then
+        return
+    end
+
+    EnableTrigger("trg_quick_where_match",    false)
+    EnableTrigger("trg_quick_where_no_match", false)
+    EnableTrigger("trg_quick_where_too_complex", false)
+    qw.index = ix
+    qw.active = true
+    qw.generation = generation
+
+    local command = ix == 1
+        and string.format("where %s", s)
+        or string.format("where %s.%s", ix, s)
+    Capture.untagged_output(
+        command,
+        ix > 1,
+        false,
+        false,
+        function(captured_styles)
+            qw_capture_complete(captured_styles, generation)
+        end,
+        false,
+        qw_capture_timeout(generation)
+    )
 end
 
 -- Trigger handler: a 'where' line matched.
@@ -114,25 +200,7 @@ function qw_match(name, line, wildcards)
 
     local mob_lower = Trim(wildcards.mobname):lower()
     local room      = wildcards.roomname
-    local found     = false
-
-    if qw.exact then
-        -- Aardwolf WHERE truncates mob names to 30 chars; compare against the
-        -- verbatim target name (qw.match), not a stop-word-stripped version.
-        if mob_lower == (qw.match or ""):lower():sub(1, 30) then
-            found = true
-        end
-    else
-        -- gmkw() can have no keyword for a mob it has never seen, and a nil
-        -- here throws inside a trigger -- which MUSHclient then disables for
-        -- the rest of the session.
-        local parts = split((snd_target_keyword() or ""):lower(), "[^ ]+")
-        for _, p in ipairs(parts) do
-            if string.find(mob_lower, p, 1, true) then
-                found = true; break
-            end
-        end
-    end
+    local found     = qw_mob_matches(mob_lower)
 
     if not found then
         qw.index = (qw.index or 1) + 1
@@ -143,7 +211,7 @@ function qw_match(name, line, wildcards)
                 qw_reset(qw.exact)
                 return
             end
-            SendNoEcho(string.format("where %s.%s", qw.index, kw))
+            do_quick_where(qw.index, kw, qw.generation)
         else
             DebugNote("SnD: qw: too many iterations, giving up.")
             qw_reset(qw.exact)
@@ -216,11 +284,6 @@ end
 
 function ht_reset()
     EnableTriggerGroup("HuntTrick", false)
-    -- Same reasoning as qw_reset: the hunt trick walks an index too, and its
-    -- outstanding 'hunt N.mob' commands answer just as late.
-    if ht and ht.active and (tonumber(ht.index) or 1) > 1 then
-        SendNoEcho("stop")
-    end
     ht = {index=1, first_target=true, active=false}
 end
 
@@ -268,6 +331,7 @@ end
 
 -- Trigger: hunt found a mob — continue to next index.
 function ht_continue()
+    if not ht.active then return end
     ht.first_target = false
     if not has_target() then return end
 
@@ -285,18 +349,8 @@ function ht_continue()
 end
 
 -- Trigger: hunt arrived at target — run qw to pin-point room.
---
--- ht_reset() runs BEFORE the qw call, not after. Reported by MiSolo: a hunt
--- trick that escalated past index 1 (several same-named mobs) would send its
--- 'where N.mob' and then immediately cancel it. ht_reset() sends 'stop' when
--- ht.index > 1, to drop any of the hunt trick's own outstanding 'hunt N.mob'
--- replies still queued server-side (the same reasoning as qw_reset() -- see
--- its comment) -- but 'stop' clears the MUD's whole pending queue, not just
--- hunt commands, so running it AFTER qw_exact() had already sent 'where'
--- canceled that too, every time the hunt trick had escalated even once.
--- ix is captured into a local before the reset either way, so reordering
--- costs nothing: qw_exact()/qw_arg() never read ht.index directly.
 function ht_complete(name, line, wildcards)
+    if not ht.active then return end
     EnableTriggerGroup("AutoHunt", false)
     local ix = ht.index or 1
     ht_reset()
@@ -310,6 +364,7 @@ end
 
 -- Trigger: hunt failed.
 function ht_fail()
+    if not ht.active then return end
     local was_first = ht.first_target
     ht_reset()
     if was_first and has_activity_target() then
@@ -322,6 +377,7 @@ end
 
 -- Trigger: 'abort' or similar canceled hunt.
 function ht_abort(name, line, wildcards)
+    if not ht.active then return end
     ht_reset()
     InfoNote("SnD: Hunt trick canceled.")
 end
