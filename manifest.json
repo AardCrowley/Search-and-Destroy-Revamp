@@ -43,8 +43,8 @@
     },
     {
       "file": "targets.lua",
-      "hash": "871e9d04",
-      "size": 88726
+      "hash": "58e64aa0",
+      "size": 89430
     },
     {
       "file": "pathing.lua",
@@ -58,8 +58,8 @@
     },
     {
       "file": "navigation.lua",
-      "hash": "86ce2320",
-      "size": 65794
+      "hash": "6cec8930",
+      "size": 68795
     },
     {
       "file": "hunting.lua",

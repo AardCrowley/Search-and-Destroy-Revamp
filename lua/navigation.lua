@@ -1178,7 +1178,7 @@ end
 
 -- Internal: execute room search query and display results.
 function _search_rooms(query, mob_name, no_autonav)
-    if not mapper_db_file then search_rooms_results({}, no_autonav); return end
+    if not mapper_db_file then search_rooms_results({}, no_autonav, mob_name); return end
     local mapdb   = sqlite3.open(mapper_db_file)
     local results = {}
     local rmid_list = {}
@@ -1243,20 +1243,74 @@ function _search_rooms(query, mob_name, no_autonav)
         end
     end
 
-    search_rooms_results(results, no_autonav)
+    search_rooms_results(results, no_autonav, mob_name)
 end
 
 -- Display a list of 'go N' hyperlinks from search_rooms results.
-function search_rooms_results(results, no_autonav)
+-- mob_name: the mob this search was run for, if known. Used to tell a
+-- detour (searching some OTHER mob, e.g. 'ms'/'xwhere' for a key mob) apart
+-- from the active cp/gq target re-searching its OWN mob (the automatic
+-- quick-where that fires after 'nx'/'xcp' arrival, or a plain 'qw') -- only
+-- the former is a detour worth snapshotting nav state for.
+function search_rooms_results(results, no_autonav, mob_name)
+    local nr = tostring(next_room or "")
+    local had_active_list = nr ~= "" and nr ~= "-1" and #gotoList > 0
+    local is_cp_gq_target = current_target
+        and (current_target.activity == "cp" or current_target.activity == "gq")
+        and current_target.index
+
+    local target_name = is_cp_gq_target and current_target.name or nil
+    local is_self_search = mob_name ~= nil
+        and target_name ~= nil
+        and tostring(target_name):lower() == tostring(mob_name):lower()
+
+    -- Reported by Obyron (as a loop of 'nx' bouncing between the first two
+    -- rooms of an 11-room list) and Cephrael (as a spurious "Nav saved" and
+    -- a hunt/where cycle that never progressed): a self-search re-running
+    -- while cycling through same-named rooms used to be indistinguishable
+    -- from a genuine detour, so it always reset gotoIndex/next_room to
+    -- 1/-1 -- discarding 'nx' progress every time the target's own mob was
+    -- re-queried. When the new result set names the exact same rooms as the
+    -- one already active, keep the existing position instead.
+    local keep_position = false
+    if is_self_search and had_active_list then
+        local old_ids, old_count = {}, 0
+        for i = 1, #gotoList do
+            local k = tostring(gotoList[i])
+            if not old_ids[k] then old_count = old_count + 1 end
+            old_ids[k] = true
+        end
+        local new_ids, new_count = {}, 0
+        for _, v in ipairs(results) do
+            local k = tostring(v.rmid)
+            if not new_ids[k] then new_count = new_count + 1 end
+            new_ids[k] = true
+        end
+        if old_count > 0 and old_count == new_count then
+            local same_set = true
+            for k in pairs(new_ids) do
+                if not old_ids[k] then same_set = false; break end
+            end
+            -- Same room-id set is not enough on its own: results are re-sorted
+            -- by seen_count (a scan/con arrival action can bump a room's count
+            -- between the old list and this one), which can shift which room
+            -- sits at gotoIndex. Only keep the position when the room actually
+            -- at gotoIndex in the new list is still the one 'nx' was pointed
+            -- at -- otherwise a stale index would walk to the wrong room, the
+            -- exact bug this self-search handling exists to fix.
+            if same_set then
+                local at_index = results[gotoIndex]
+                keep_position = at_index ~= nil and tostring(at_index.rmid) == nr
+            end
+        end
+    end
+
     -- If we are mid-navigation for a CP/GQ target and something is overwriting
     -- the room list (e.g. the player searched for a key mob), snapshot the
-    -- current nav state so xcp can restore it afterward.
-    local nr = tostring(next_room or "")
-    if current_target
-    and (current_target.activity == "cp" or current_target.activity == "gq")
-    and current_target.index
-    and nr ~= "" and nr ~= "-1"
-    and #gotoList > 0 then
+    -- current nav state so xcp can restore it afterward. A self-search never
+    -- counts as the detour this exists for -- it is the same target's own
+    -- room list being refreshed, not something else overwriting it.
+    if is_cp_gq_target and not is_self_search and had_active_list then
         local snap = {
             activity  = current_target.activity,
             target_id = current_target.index,
@@ -1275,8 +1329,10 @@ function search_rooms_results(results, no_autonav)
     end
 
     gotoArea  = -1
-    gotoIndex = 1
-    next_room = -1
+    if not keep_position then
+        gotoIndex = 1
+        next_room = -1
+    end
     gotoList  = {}
 
     local table_width    = tonumber(snd_get_setting("table_width", "80")) or 80

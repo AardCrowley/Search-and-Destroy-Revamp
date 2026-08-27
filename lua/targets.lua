@@ -1956,6 +1956,16 @@ end
 -- Called after the player kills a CP mob.
 function cp_mob_killed()
     handle_mob_killed("cp")
+    -- Same reason gq_mob_killed re-checks below: a background 'cp check' is
+    -- the one thing that resyncs against the server's own authoritative
+    -- list, self-healing anything the local last_mob_killed match got wrong
+    -- (an ambiguous mob/room resolved to the wrong area, a kill the damage
+    -- tracker never saw). Without it, a match miss left the mob listed and
+    -- alive with no recovery short of the player typing 'cp check'
+    -- themselves. Reported by Obyron: killed a campaign mob whose area SnD
+    -- had guessed wrong, and 'xcp 1' kept routing back to it until a manual
+    -- 'cp check' caught the miniwindow up.
+    DoAfterSpecial(0.3, [[ do_cp_check() ]], sendto.script)
     if type(xg_draw_window) == "function" then xg_draw_window() end
 end
 

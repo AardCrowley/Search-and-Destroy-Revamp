@@ -38,6 +38,36 @@
   whichever is still running, the same way switching to its tab by hand
   already does.
 
+- **Fixed: `nx` could bounce between the same two rooms forever, or claim a
+  detour that never happened, when a campaign/gquest target had several
+  same-named rooms.** The automatic quick-where that fires on `nx`/`xcp`
+  arrival re-searches the target's own mob, and that re-search always reset
+  `nx`'s position back to room 1 — discarding all progress every single
+  arrival, on any list with duplicate room names. It was also
+  indistinguishable from a genuine detour (searching some *other* mob mid
+  navigation), so it printed a spurious "Nav saved — type 'xcp' to resume"
+  for a navigation that was never interrupted. This kind of self-search is
+  now recognized for what it is: when it resolves to the exact same room
+  the list was already on, `nx`'s position is kept instead of reset, and no
+  detour is recorded. (A same-room-set re-search that gets re-sorted by the
+  arrival scan/con action — moving that room to a different position in the
+  list — falls back to the ordinary reset rather than risk pointing `nx` at
+  the wrong room.)
+  Reported by **Obyron** (an 11-room list bouncing `nx` between the first
+  two rooms) and **Cephrael** (the spurious "Nav saved" and a hunt/where
+  cycle that never progressed).
+
+- **Fixed: a campaign mob whose area S&D guessed wrong could stay listed
+  and "alive" after being killed, with `xcp` routing back to it until a
+  manual `cp check`.** The local kill match can occasionally resolve an
+  ambiguous mob or room to the wrong area, or miss a kill the damage
+  tracker never saw; nothing after that resynced against the server's own
+  list short of the player typing `cp check` themselves. A campaign kill
+  now also queues a background `cp check` shortly after, self-healing
+  anything the local match got wrong the same way it already does for
+  gquest kills.
+  Reported by **Obyron**.
+
 ## New
 
 - **`cp reroll <n>` now sends the number the game actually means.**
