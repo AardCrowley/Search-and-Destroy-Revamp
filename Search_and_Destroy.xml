@@ -232,7 +232,7 @@ table_width = 80
 -- Keep it in step with the VERSION file; tests/version_consistency_test.lua
 -- fails the build if they disagree, and checks the attribute is the
 -- major.minor of it.
-SND_VERSION = "6.0.6-dev"
+SND_VERSION = "6.0.6"
 
 -- snd_version() also exists in constants.lua, for the modules to call: modules
 -- are updated by 'snd update' while this file is not, so a module calling a
